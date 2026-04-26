@@ -50,7 +50,7 @@
 
 ### Task #4: 新增 CLI note 引用解析辅助函数
 
-**Status:** Designed
+**Status:** Finished
 
 **Files:** Modify `src/zembra_cli/cli.py`; Modify `tests/test_cli.py`
 
@@ -62,7 +62,7 @@
 
 ### Task #5: 实现冲突候选摘要格式化
 
-**Status:** Designed
+**Status:** Finished
 
 **Files:** Modify `src/zembra_cli/cli.py`; Modify `tests/test_cli.py`
 
@@ -102,3 +102,5 @@
 
 - 2026.04.26：Stage #1 完成 note 引用解析错误类型、Repository 前缀解析 API、完整 ID 兼容和软删除边界测试；`uv run pytest tests/test_repository.py`，18 passed。
 - 2026.04.26：Stage #1 执行 `uv run ruff check src/zembra_cli/repository tests/test_repository.py`，All checks passed。
+- 2026.04.26：Stage #2 完成 CLI note 引用解析辅助函数和冲突候选摘要格式化；`uv run pytest tests/test_cli.py`，17 passed。
+- 2026.04.26：Stage #2 执行 `uv run ruff check src/zembra_cli/cli.py tests/test_cli.py`，All checks passed。

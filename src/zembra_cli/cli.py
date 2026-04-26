@@ -10,7 +10,13 @@ from rich.console import Console
 from zembra_cli import __version__
 from zembra_cli.config import ConfigError, default_config_path, load_config, write_database_path
 from zembra_cli.db import database_connection, missing_core_tables
-from zembra_cli.repository import ZembraRepository
+from zembra_cli.repository import (
+    AmbiguousNoteReferenceError,
+    InvalidNoteReferenceError,
+    NoteReferenceTooShortError,
+    RecordNotFoundError,
+    ZembraRepository,
+)
 
 app = typer.Typer(
     name="zembra-cli",
@@ -53,6 +59,67 @@ def fail_command(message: str) -> None:
     """
     typer.echo(message, err=True)
     raise typer.Exit(code=1)
+
+
+def summarize_note_content(content: str, max_length: int = 48) -> str:
+    """Create a single-line note summary for command-line error messages.
+
+    Args:
+        content: Note body text.
+        max_length: Maximum summary length including any ellipsis.
+
+    Returns:
+        Single-line note summary.
+    """
+    summary = " ".join(content.split())
+    if len(summary) <= max_length:
+        return summary
+    if max_length <= 3:
+        return "." * max_length
+    return f"{summary[: max_length - 3]}..."
+
+
+def format_ambiguous_note_reference(error: AmbiguousNoteReferenceError) -> str:
+    """Format an ambiguous note reference error for CLI output.
+
+    Args:
+        error: Repository ambiguity error containing matching note candidates.
+
+    Returns:
+        Multi-line error message with candidate note hints.
+    """
+    lines = [
+        f'Note reference "{error.note_ref}" is ambiguous. Use more characters.',
+        "Matches:",
+    ]
+    for candidate in error.candidates:
+        lines.append(f"- {candidate.id[:8]}  {summarize_note_content(candidate.content)}")
+    return "\n".join(lines)
+
+
+def resolve_note_reference(repository: ZembraRepository, note_ref: str) -> str:
+    """Resolve a user-provided note reference or fail the CLI command.
+
+    Args:
+        repository: Repository used to resolve note identifiers.
+        note_ref: User-provided full note id or note id prefix.
+
+    Returns:
+        Complete note id for a unique matching note.
+    """
+    try:
+        return repository.resolve_note_id(note_ref)
+    except InvalidNoteReferenceError as error:
+        fail_command(f'Note reference "{error.note_ref}" is invalid: {error.reason}.')
+    except NoteReferenceTooShortError as error:
+        fail_command(
+            f'Note reference "{error.note_ref}" is too short. '
+            f"Use at least {error.minimum_length} characters."
+        )
+    except AmbiguousNoteReferenceError as error:
+        fail_command(format_ambiguous_note_reference(error))
+    except RecordNotFoundError as error:
+        fail_command(f'Note reference "{error.record_id}" did not match any note.')
 
 
 def require_initialized_database(database_path) -> None:

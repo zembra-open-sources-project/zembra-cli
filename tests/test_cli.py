@@ -4,12 +4,21 @@ import json
 import sqlite3
 from pathlib import Path
 
+import pytest
+import typer
 from typer.testing import CliRunner
 
 from zembra_cli import __version__, cli
 from zembra_cli.cli import app
 from zembra_cli.config import load_config
 from zembra_cli.db import database_connection, initialize_database
+from zembra_cli.models import NoteRecord
+from zembra_cli.repository import (
+    AmbiguousNoteReferenceError,
+    InvalidNoteReferenceError,
+    NoteReferenceTooShortError,
+    RecordNotFoundError,
+)
 
 runner = CliRunner()
 
@@ -42,6 +51,59 @@ def initialize_cli_database(database_path) -> None:
     """
     with database_connection(database_path) as connection:
         initialize_database(connection)
+
+
+class FakeNoteReferenceRepository:
+    """Resolve note references with a configured result or error.
+
+    Attributes:
+        result: Complete note id returned by successful resolution.
+        error: Optional exception raised during resolution.
+    """
+
+    def __init__(self, result: str = "abcd0000", error: Exception | None = None) -> None:
+        """Initialize the fake repository.
+
+        Args:
+            result: Complete note id returned by successful resolution.
+            error: Optional exception raised during resolution.
+
+        Returns:
+            None.
+        """
+        self.result = result
+        self.error = error
+
+    def resolve_note_id(self, note_ref: str) -> str:
+        """Resolve a note reference or raise the configured error.
+
+        Args:
+            note_ref: User-provided note reference.
+
+        Returns:
+            Complete note id.
+        """
+        if self.error is not None:
+            raise self.error
+        return self.result
+
+
+def make_note(note_id: str, content: str) -> NoteRecord:
+    """Create a note record for CLI formatting tests.
+
+    Args:
+        note_id: Stable note identifier.
+        content: Note body text.
+
+    Returns:
+        Note record with minimal valid timestamps.
+    """
+    return NoteRecord(
+        id=note_id,
+        content=content,
+        created_at=1,
+        updated_at=1,
+    )
 
 
 def test_version_flag_prints_package_version() -> None:
@@ -272,3 +334,120 @@ def test_hello_command_does_not_require_config(tmp_path, monkeypatch) -> None:
 
     assert result.exit_code == 0
     assert "Hello, Ada. Zembra is ready." in result.stdout
+
+
+def test_summarize_note_content_flattens_and_truncates_text() -> None:
+    """Verify note summaries are stable single-line snippets.
+
+    Args:
+        None.
+
+    Returns:
+        None.
+    """
+    summary = cli.summarize_note_content("first line\nsecond\tline with extra text", max_length=18)
+
+    assert summary == "first line seco..."
+
+
+def test_resolve_note_reference_returns_complete_id() -> None:
+    """Verify CLI note reference helper returns repository results.
+
+    Args:
+        None.
+
+    Returns:
+        None.
+    """
+    repository = FakeNoteReferenceRepository(result="abcd0000000000000000000000000000")
+
+    assert cli.resolve_note_reference(repository, "abcd") == "abcd0000000000000000000000000000"
+
+
+def test_resolve_note_reference_reports_invalid_input(capsys) -> None:
+    """Verify invalid note references become readable CLI failures.
+
+    Args:
+        capsys: Pytest output capture fixture.
+
+    Returns:
+        None.
+    """
+    repository = FakeNoteReferenceRepository(
+        error=InvalidNoteReferenceError("note-123", "only hexadecimal characters are supported")
+    )
+
+    with pytest.raises(typer.Exit) as error:
+        cli.resolve_note_reference(repository, "note-123")
+
+    assert error.value.exit_code == 1
+    assert (
+        'Note reference "note-123" is invalid: only hexadecimal characters are supported.'
+        in capsys.readouterr().err
+    )
+
+
+def test_resolve_note_reference_reports_short_prefix(capsys) -> None:
+    """Verify short note references become readable CLI failures.
+
+    Args:
+        capsys: Pytest output capture fixture.
+
+    Returns:
+        None.
+    """
+    repository = FakeNoteReferenceRepository(error=NoteReferenceTooShortError("abc", 4))
+
+    with pytest.raises(typer.Exit) as error:
+        cli.resolve_note_reference(repository, "abc")
+
+    assert error.value.exit_code == 1
+    assert (
+        'Note reference "abc" is too short. Use at least 4 characters.'
+        in capsys.readouterr().err
+    )
+
+
+def test_resolve_note_reference_reports_missing_note(capsys) -> None:
+    """Verify missing note references become readable CLI failures.
+
+    Args:
+        capsys: Pytest output capture fixture.
+
+    Returns:
+        None.
+    """
+    repository = FakeNoteReferenceRepository(error=RecordNotFoundError("notes", "abcd"))
+
+    with pytest.raises(typer.Exit) as error:
+        cli.resolve_note_reference(repository, "abcd")
+
+    assert error.value.exit_code == 1
+    assert 'Note reference "abcd" did not match any note.' in capsys.readouterr().err
+
+
+def test_resolve_note_reference_reports_ambiguous_candidates(capsys) -> None:
+    """Verify ambiguous note references include candidate hints.
+
+    Args:
+        capsys: Pytest output capture fixture.
+
+    Returns:
+        None.
+    """
+    candidates = [
+        make_note("abcd0000000000000000000000000000", "first\nnote"),
+        make_note("abcd1111111111111111111111111111", "second note with a longer body"),
+    ]
+    repository = FakeNoteReferenceRepository(
+        error=AmbiguousNoteReferenceError("abcd", candidates)
+    )
+
+    with pytest.raises(typer.Exit) as error:
+        cli.resolve_note_reference(repository, "abcd")
+
+    stderr = capsys.readouterr().err
+    assert error.value.exit_code == 1
+    assert 'Note reference "abcd" is ambiguous. Use more characters.' in stderr
+    assert "- abcd0000  first note" in stderr
+    assert "- abcd1111  second note with a longer body" in stderr
