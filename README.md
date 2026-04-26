@@ -1,22 +1,22 @@
 # zembra-cli
 
-A command-line note application built with Python, Typer, Rich, and uv.
+一个使用 Python、Typer、Rich 和 uv 构建的命令行笔记应用。
 
-## Development
+## 开发
 
-Install dependencies:
+安装依赖：
 
 ```bash
 uv sync
 ```
 
-Run the CLI:
+运行 CLI：
 
 ```bash
 uv run zembra --help
 ```
 
-Run tests:
+运行测试：
 
 ```bash
 uv run pytest
