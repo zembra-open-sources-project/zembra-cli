@@ -38,7 +38,7 @@
 
 ### Task #3: 实现 tags 参数解析
 
-**Status:** Designed
+**Status:** Finished
 
 **Files:** Modify `src/zembra_cli/cli.py`; Modify `tests/test_cli.py`
 
@@ -50,7 +50,7 @@
 
 ### Task #4: 实现 add 命令创建 note
 
-**Status:** Designed
+**Status:** Finished
 
 **Files:** Modify `src/zembra_cli/cli.py`; Verify `src/zembra_cli/repository/notes.py`; Modify `tests/test_cli.py`
 
@@ -62,7 +62,7 @@
 
 ### Task #5: 实现成功 JSON 和失败自然语言输出
 
-**Status:** Designed
+**Status:** Finished
 
 **Files:** Modify `src/zembra_cli/cli.py`; Modify `tests/test_cli.py`
 
@@ -102,3 +102,5 @@
 
 - 2026.04.26：Stage #1 完成统一入口名和默认数据库表检查辅助函数；`uv run pytest`，18 passed。
 - 2026.04.26：Stage #1 执行 `uv run ruff check .`，All checks passed。
+- 2026.04.26：Stage #2 完成 `add` 命令、tags 解析、JSON 输出和错误路径；`uv run pytest`，23 passed。
+- 2026.04.26：Stage #2 执行 `uv run ruff check .`，All checks passed。
