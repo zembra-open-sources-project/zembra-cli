@@ -76,7 +76,7 @@
 
 ### Task #6: 执行自动化回归验证
 
-**Status:** Designed
+**Status:** Finished
 
 **Files:** Verify full repository
 
@@ -88,7 +88,7 @@
 
 ### Task #7: 更新开发计划状态与验证记录
 
-**Status:** Designed
+**Status:** Finished
 
 **Files:** Modify `docs/exec-plans/active/cli/rc003-note-id-prefix-resolution.md`
 
@@ -104,3 +104,5 @@
 - 2026.04.26：Stage #1 执行 `uv run ruff check src/zembra_cli/repository tests/test_repository.py`，All checks passed。
 - 2026.04.26：Stage #2 完成 CLI note 引用解析辅助函数和冲突候选摘要格式化；`uv run pytest tests/test_cli.py`，17 passed。
 - 2026.04.26：Stage #2 执行 `uv run ruff check src/zembra_cli/cli.py tests/test_cli.py`，All checks passed。
+- 2026.04.26：Stage #3 执行完整回归验证；`uv run pytest`，50 passed。
+- 2026.04.26：Stage #3 执行 `uv run ruff check .`，All checks passed。
