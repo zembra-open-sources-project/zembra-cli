@@ -30,7 +30,7 @@
 - docs/exec-plans/tech-debt-tracker.md 记录项目的技术债。
 - docs/references/ 存放外部依赖、协议、框架和工具参考资料摘要。
 - docs/generated/ 存放自动生成文档；默认只读，不手工维护。
-- docs/PROGRESS.md 记录当前专注任务、流程记录、最近验证结果和归档索引。
+- `docs/PROGRESS.md` 项目进度追踪文件，包含两个章节。`项目流程记录` 章节记录项目计划与阶段推进状态，针对每个需求，记录需求编号、git HEAD id（保留前八位），然后使用连续的、不超过200字的简体中文描述本次开发实现的计划以及实现情况，每个需求只允许记录一个条目，如果存在该条目，则在已有内容基础上追加。
 - docs/DESIGN.md 记录项目的设计规则，包括 UI 设计、功能设计规范。
 - docs/FRONTEND.md 记录项目的前端设计架构。
 - docs/PRODUCT_SENSE.md 记录产品判断和体验原则。
