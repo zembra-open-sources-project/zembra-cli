@@ -4,9 +4,9 @@
 
 ## Related Design Doc
 
-`docs/design-docs/database/r002-crud-repository.md`
+`docs/design-docs/database/rb002-crud-repository.md`
 
-需求澄清文档：`docs/request-clarify/database/r002-crud-repository.md`
+需求澄清文档：`docs/request-clarify/database/rb002-crud-repository.md`
 
 ## Stage #1: Repository 基础结构与读写骨架
 
@@ -104,7 +104,7 @@
 
 **Status:** Finished
 
-**Files:** Verify full repository; Modify `docs/exec-plans/active/database/r002-crud-repository.md`
+**Files:** Verify full repository; Modify `docs/exec-plans/active/database/rb002-crud-repository.md`
 
 **Function:** 运行完整测试和 lint，并回写任务状态与验证结果。
 

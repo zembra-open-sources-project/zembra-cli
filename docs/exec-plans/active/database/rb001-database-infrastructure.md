@@ -2,9 +2,9 @@
 
 日期：2026.04.26
 
-需求澄清文档：`docs/request-clarify/database/r001-database-infrastructure.md`
+需求澄清文档：`docs/request-clarify/database/rb001-database-infrastructure.md`
 
-设计文档：`docs/design-docs/database/r001-database-infrastructure.md`
+设计文档：`docs/design-docs/database/rb001-database-infrastructure.md`
 
 ## Stage 1：基础设施初始化
 

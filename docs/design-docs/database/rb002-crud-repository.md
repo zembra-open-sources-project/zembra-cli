@@ -2,7 +2,7 @@
 
 日期：2026.04.26
 
-需求澄清文档：`docs/request-clarify/database/r002-crud-repository.md`
+需求澄清文档：`docs/request-clarify/database/rb002-crud-repository.md`
 
 ## 核心功能（WHAT）
 

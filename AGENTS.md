@@ -62,8 +62,9 @@
 
 文档命名规则：
 - 默认命名格式为 rNNN-request-desc.md。
-- 启用模块编号时，可使用 rwNNN-request-desc.md、rbNNN-request-desc.md、rpNNN-request-desc.md 等格式。
-- w、b、p 是示例子模块前缀，必须根据项目模块变化调整。
+- 启用模块编号时，使用 r + 模块前缀 + 三位递增编号 + request-desc 的格式，例如 rb001-database-infrastructure.md。
+- 当前模块前缀：database 使用 rbNNN，cli 使用 rcNNN。
+- 新增模块前缀必须先写入 AGENTS.md，再创建对应需求文档。
 - 同一需求在 request-clarify、design-docs、exec-plans 中使用同名文件。
 - 日期只允许写在文档头部，不放入文件名。
 

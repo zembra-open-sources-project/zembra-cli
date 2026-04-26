@@ -2,7 +2,7 @@
 
 日期：2026.04.26
 
-需求澄清文档：`docs/request-clarify/database/r001-database-infrastructure.md`
+需求澄清文档：`docs/request-clarify/database/rb001-database-infrastructure.md`
 
 ## 设计目标
 
