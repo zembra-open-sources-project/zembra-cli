@@ -88,7 +88,7 @@
 
 ### Task #7: 补齐配置与 CLI 自动化测试
 
-**Status:** Designed
+**Status:** Finished
 
 **Files:** Modify `tests/test_config.py`; Modify `tests/test_cli.py`
 
@@ -100,7 +100,7 @@
 
 ### Task #8: 执行整体验证并回写计划状态
 
-**Status:** Designed
+**Status:** Finished
 
 **Files:** Verify full repository; Modify `docs/exec-plans/active/cli/rc002-zembra-env-config.md`
 
@@ -116,3 +116,5 @@
 - 2026.04.26：Stage #1 执行 `uv run ruff check .`，All checks passed。
 - 2026.04.26：Stage #2 完成 `config database` 命令、`add` 配置加载迁移和非数据库命令豁免；`uv run pytest`，35 passed。
 - 2026.04.26：Stage #2 执行 `uv run ruff check .`，All checks passed。
+- 2026.04.26：Stage #3 完成配置与 CLI 自动化测试补齐和最终回归；`uv run pytest`，35 passed。
+- 2026.04.26：Stage #3 执行 `uv run ruff check .`，All checks passed。
