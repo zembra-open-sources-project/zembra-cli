@@ -12,7 +12,7 @@ dependencies = [
 ]
 
 [project.scripts]
-zembra = "zembra_cli.cli:app"
+zembra-cli = "zembra_cli.cli:app"
 
 [dependency-groups]
 dev = [

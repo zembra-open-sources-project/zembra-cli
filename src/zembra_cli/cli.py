@@ -8,7 +8,7 @@ from rich.console import Console
 from zembra_cli import __version__
 
 app = typer.Typer(
-    name="zembra",
+    name="zembra-cli",
     help="A calm command-line workspace for notes.",
     no_args_is_help=True,
 )

@@ -24,6 +24,8 @@ CORE_TABLES = (
     "note_revisions",
 )
 
+DEFAULT_DATABASE_PATH = Path.home() / ".zembra" / "zembra.sqlite3"
+
 
 def connect_database(database_path: str | Path) -> sqlite3.Connection:
     """Open a SQLite connection with foreign key enforcement enabled.
@@ -100,3 +102,15 @@ def list_user_tables(connection: sqlite3.Connection) -> set[str]:
         "SELECT name FROM sqlite_master WHERE type = 'table' AND name NOT LIKE 'sqlite_%'"
     ).fetchall()
     return {row["name"] for row in rows}
+
+
+def missing_core_tables(connection: sqlite3.Connection) -> set[str]:
+    """List required Zembra tables that are absent from the current database.
+
+    Args:
+        connection: Open SQLite connection to inspect.
+
+    Returns:
+        A set containing required table names that are missing.
+    """
+    return set(CORE_TABLES) - list_user_tables(connection)

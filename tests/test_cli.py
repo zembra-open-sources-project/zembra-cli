@@ -1,4 +1,4 @@
-"""Tests for the zembra command-line interface."""
+"""Tests for the zembra-cli command-line interface."""
 
 from typer.testing import CliRunner
 
