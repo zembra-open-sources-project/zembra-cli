@@ -68,6 +68,11 @@
 - 同一需求在 request-clarify、design-docs、exec-plans 中使用同名文件。
 - 日期只允许写在文档头部，不放入文件名。
 
+命名真源规则：
+- `zembra` 是本项目、笔记系统、Python 包和 CLI 命名的唯一真源。
+- 遇到 `zambra`、`Zambra`、`.zambra.env` 等拼写时，必须自动对齐为 `zembra`、`Zembra`、`.zembra.env`，除非用户明确要求讨论历史拼写错误本身。
+- 文档、代码、配置文件、命令示例和测试断言都必须使用 `zembra` 拼写。
+
 执行计划状态规则：
 - docs/exec-plans/active/ 只放当前进行中或等待验收的执行计划。
 - 未经用户验收的执行计划不得自动移动到 docs/exec-plans/completed/。
