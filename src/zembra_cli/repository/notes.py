@@ -3,8 +3,17 @@
 from collections.abc import Sequence
 
 from zembra_cli.models import NoteRecord, NoteRevisionRecord
-from zembra_cli.repository.exceptions import RecordNotFoundError
+from zembra_cli.repository.exceptions import (
+    AmbiguousNoteReferenceError,
+    InvalidNoteReferenceError,
+    NoteReferenceTooShortError,
+    RecordNotFoundError,
+)
 from zembra_cli.repository.field_tag import FieldTagRepository
+
+MIN_NOTE_REFERENCE_LENGTH = 4
+FULL_NOTE_ID_LENGTH = 32
+NOTE_REFERENCE_CANDIDATE_LIMIT = 6
 
 
 class ZembraRepository(FieldTagRepository):
@@ -81,6 +90,46 @@ class ZembraRepository(FieldTagRepository):
                 (note_id,),
             ).fetchone()
         return self._row_to_model(row, NoteRecord) if row is not None else None
+
+    def resolve_note_id(self, note_ref: str, include_deleted: bool = False) -> str:
+        """Resolve a full note id or unique note id prefix to a complete note id.
+
+        Args:
+            note_ref: User-provided full note id or note id prefix.
+            include_deleted: Whether soft-deleted notes are eligible.
+
+        Returns:
+            The complete note id matching the reference.
+        """
+        normalized_ref = self._normalize_note_ref(note_ref)
+        if len(normalized_ref) < MIN_NOTE_REFERENCE_LENGTH:
+            raise NoteReferenceTooShortError(normalized_ref, MIN_NOTE_REFERENCE_LENGTH)
+
+        if len(normalized_ref) == FULL_NOTE_ID_LENGTH:
+            note = self.get_note(normalized_ref, include_deleted=include_deleted)
+            if note is None:
+                raise RecordNotFoundError("notes", normalized_ref)
+            return note.id
+
+        candidates = self._find_notes_by_id_prefix(normalized_ref, include_deleted=include_deleted)
+        if not candidates:
+            raise RecordNotFoundError("notes", normalized_ref)
+        if len(candidates) > 1:
+            raise AmbiguousNoteReferenceError(normalized_ref, candidates)
+        return candidates[0].id
+
+    def get_note_by_ref(self, note_ref: str, include_deleted: bool = False) -> NoteRecord | None:
+        """Fetch a note by full id or unique note id prefix.
+
+        Args:
+            note_ref: User-provided full note id or note id prefix.
+            include_deleted: Whether soft-deleted notes are eligible.
+
+        Returns:
+            Matching note record, or None when no record exists for a complete id.
+        """
+        note_id = self.resolve_note_id(note_ref, include_deleted=include_deleted)
+        return self.get_note(note_id, include_deleted=include_deleted)
 
     def list_notes(self, include_deleted: bool = False) -> list[NoteRecord]:
         """List notes ordered by recent activity.
@@ -213,3 +262,55 @@ class ZembraRepository(FieldTagRepository):
         if note is None:
             raise RecordNotFoundError("notes", note_id)
         return note
+
+    def _normalize_note_ref(self, note_ref: str) -> str:
+        """Normalize and validate a user-provided note reference.
+
+        Args:
+            note_ref: User-provided full note id or note id prefix.
+
+        Returns:
+            Lowercase hexadecimal note reference without surrounding whitespace.
+        """
+        normalized_ref = note_ref.strip().lower()
+        if not normalized_ref:
+            raise InvalidNoteReferenceError(note_ref, "empty note reference")
+        if not all(character in "0123456789abcdef" for character in normalized_ref):
+            raise InvalidNoteReferenceError(note_ref, "only hexadecimal characters are supported")
+        return normalized_ref
+
+    def _find_notes_by_id_prefix(
+        self,
+        note_ref: str,
+        include_deleted: bool = False,
+    ) -> list[NoteRecord]:
+        """Find notes whose identifiers start with the supplied prefix.
+
+        Args:
+            note_ref: Normalized hexadecimal note id prefix.
+            include_deleted: Whether soft-deleted notes are eligible.
+
+        Returns:
+            Matching note records ordered for stable ambiguity messages.
+        """
+        if include_deleted:
+            rows = self.connection.execute(
+                """
+                SELECT * FROM notes
+                WHERE id LIKE ?
+                ORDER BY updated_at DESC, created_at DESC, id ASC
+                LIMIT ?
+                """,
+                (f"{note_ref}%", NOTE_REFERENCE_CANDIDATE_LIMIT),
+            ).fetchall()
+        else:
+            rows = self.connection.execute(
+                """
+                SELECT * FROM notes
+                WHERE id LIKE ? AND deleted_at IS NULL
+                ORDER BY updated_at DESC, created_at DESC, id ASC
+                LIMIT ?
+                """,
+                (f"{note_ref}%", NOTE_REFERENCE_CANDIDATE_LIMIT),
+            ).fetchall()
+        return [self._row_to_model(row, NoteRecord) for row in rows]
