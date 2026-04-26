@@ -50,7 +50,7 @@
 
 ### Task #4: 新增 config database 命令
 
-**Status:** Designed
+**Status:** Finished
 
 **Files:** Modify `src/zembra_cli/cli.py`; Modify `tests/test_cli.py`
 
@@ -62,7 +62,7 @@
 
 ### Task #5: 将 add 命令迁移为读取配置路径
 
-**Status:** Designed
+**Status:** Finished
 
 **Files:** Modify `src/zembra_cli/cli.py`; Modify `tests/test_cli.py`
 
@@ -74,7 +74,7 @@
 
 ### Task #6: 保证非数据库命令不强制加载配置
 
-**Status:** Designed
+**Status:** Finished
 
 **Files:** Modify `src/zembra_cli/cli.py`; Modify `tests/test_cli.py`
 
@@ -114,3 +114,5 @@
 
 - 2026.04.26：Stage #1 完成配置模型、配置错误、TOML 读取和写入；`uv run pytest`，31 passed。
 - 2026.04.26：Stage #1 执行 `uv run ruff check .`，All checks passed。
+- 2026.04.26：Stage #2 完成 `config database` 命令、`add` 配置加载迁移和非数据库命令豁免；`uv run pytest`，35 passed。
+- 2026.04.26：Stage #2 执行 `uv run ruff check .`，All checks passed。

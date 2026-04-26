@@ -2,27 +2,33 @@
 
 import json
 import sqlite3
+from pathlib import Path
 
 from typer.testing import CliRunner
 
 from zembra_cli import __version__, cli
 from zembra_cli.cli import app
+from zembra_cli.config import load_config
 from zembra_cli.db import database_connection, initialize_database
 
 runner = CliRunner()
 
 
-def configure_cli_database(monkeypatch, database_path) -> None:
-    """Point CLI commands at a test database path.
+def configure_cli_database(monkeypatch, tmp_path, database_path) -> Path:
+    """Point CLI commands at a test config and database path.
 
     Args:
         monkeypatch: Pytest monkeypatch fixture.
+        tmp_path: Pytest temporary directory fixture.
         database_path: Temporary database path used by the CLI.
 
     Returns:
-        None.
+        The temporary config path.
     """
-    monkeypatch.setattr(cli, "DEFAULT_DATABASE_PATH", database_path)
+    config_path = tmp_path / ".zembra.env"
+    config_path.write_text(f'[database]\npath = "{database_path}"\n', encoding="utf-8")
+    monkeypatch.setattr(cli, "default_config_path", lambda: config_path)
+    return config_path
 
 
 def initialize_cli_database(database_path) -> None:
@@ -80,7 +86,7 @@ def test_add_command_creates_note_with_repeated_tags(tmp_path, monkeypatch) -> N
     """
     database_path = tmp_path / "zembra.sqlite3"
     initialize_cli_database(database_path)
-    configure_cli_database(monkeypatch, database_path)
+    configure_cli_database(monkeypatch, tmp_path, database_path)
 
     result = runner.invoke(
         app,
@@ -107,7 +113,7 @@ def test_add_command_parses_comma_and_mixed_tags(tmp_path, monkeypatch) -> None:
     """
     database_path = tmp_path / "zembra.sqlite3"
     initialize_cli_database(database_path)
-    configure_cli_database(monkeypatch, database_path)
+    configure_cli_database(monkeypatch, tmp_path, database_path)
 
     result = runner.invoke(
         app,
@@ -131,7 +137,7 @@ def test_add_command_preserves_shell_received_content(tmp_path, monkeypatch) -> 
     """
     database_path = tmp_path / "zembra.sqlite3"
     initialize_cli_database(database_path)
-    configure_cli_database(monkeypatch, database_path)
+    configure_cli_database(monkeypatch, tmp_path, database_path)
     content = r"literal\ntext"
 
     result = runner.invoke(app, ["add", content, "--field", "work"])
@@ -153,7 +159,7 @@ def test_add_command_reports_missing_database(tmp_path, monkeypatch) -> None:
         None.
     """
     database_path = tmp_path / "missing.sqlite3"
-    configure_cli_database(monkeypatch, database_path)
+    configure_cli_database(monkeypatch, tmp_path, database_path)
 
     result = runner.invoke(app, ["add", "hello", "--field", "work"])
 
@@ -173,9 +179,96 @@ def test_add_command_reports_uninitialized_database(tmp_path, monkeypatch) -> No
     """
     database_path = tmp_path / "empty.sqlite3"
     sqlite3.connect(database_path).close()
-    configure_cli_database(monkeypatch, database_path)
+    configure_cli_database(monkeypatch, tmp_path, database_path)
 
     result = runner.invoke(app, ["add", "hello", "--field", "work"])
 
     assert result.exit_code == 1
     assert f"Database is not initialized at {database_path}" in result.stderr
+
+
+def test_config_database_command_writes_config(tmp_path, monkeypatch) -> None:
+    """Verify config database writes the shared zembra config.
+
+    Args:
+        tmp_path: Pytest temporary directory fixture.
+        monkeypatch: Pytest monkeypatch fixture.
+
+    Returns:
+        None.
+    """
+    config_path = tmp_path / ".zembra.env"
+    database_path = tmp_path / "zembra.sqlite3"
+    monkeypatch.setattr(cli, "default_config_path", lambda: config_path)
+
+    result = runner.invoke(app, ["config", "database", str(database_path)])
+
+    assert result.exit_code == 0
+    assert f"Configured zembra database path: {database_path}" in result.stdout
+    assert load_config(config_path).database_path == database_path
+
+
+def test_config_database_command_preserves_existing_fields(tmp_path, monkeypatch) -> None:
+    """Verify config database updates only the database path.
+
+    Args:
+        tmp_path: Pytest temporary directory fixture.
+        monkeypatch: Pytest monkeypatch fixture.
+
+    Returns:
+        None.
+    """
+    config_path = tmp_path / ".zembra.env"
+    database_path = tmp_path / "zembra.sqlite3"
+    config_path.write_text(
+        'theme = "light"\n\n[database]\npath = "old.sqlite3"\n',
+        encoding="utf-8",
+    )
+    monkeypatch.setattr(cli, "default_config_path", lambda: config_path)
+
+    result = runner.invoke(app, ["config", "database", str(database_path)])
+
+    assert result.exit_code == 0
+    config_text = config_path.read_text(encoding="utf-8")
+    assert 'theme = "light"' in config_text
+    assert f'path = "{database_path}"' in config_text
+
+
+def test_add_command_reports_missing_config(tmp_path, monkeypatch) -> None:
+    """Verify add prompts users to create the zembra config when missing.
+
+    Args:
+        tmp_path: Pytest temporary directory fixture.
+        monkeypatch: Pytest monkeypatch fixture.
+
+    Returns:
+        None.
+    """
+    config_path = tmp_path / ".zembra.env"
+    monkeypatch.setattr(cli, "default_config_path", lambda: config_path)
+
+    result = runner.invoke(app, ["add", "hello", "--field", "work"])
+
+    assert result.exit_code == 1
+    assert (
+        f"Config file is missing at {config_path}. "
+        "Create it with: zembra-cli config database <file-path>"
+    ) in result.stderr
+
+
+def test_hello_command_does_not_require_config(tmp_path, monkeypatch) -> None:
+    """Verify non-database commands do not load the zembra config.
+
+    Args:
+        tmp_path: Pytest temporary directory fixture.
+        monkeypatch: Pytest monkeypatch fixture.
+
+    Returns:
+        None.
+    """
+    monkeypatch.setattr(cli, "default_config_path", lambda: tmp_path / ".zembra.env")
+
+    result = runner.invoke(app, ["hello", "Ada"])
+
+    assert result.exit_code == 0
+    assert "Hello, Ada. Zembra is ready." in result.stdout

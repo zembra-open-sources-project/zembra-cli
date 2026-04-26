@@ -8,7 +8,8 @@ import typer
 from rich.console import Console
 
 from zembra_cli import __version__
-from zembra_cli.db import DEFAULT_DATABASE_PATH, database_connection, missing_core_tables
+from zembra_cli.config import ConfigError, default_config_path, load_config, write_database_path
+from zembra_cli.db import database_connection, missing_core_tables
 from zembra_cli.repository import ZembraRepository
 
 app = typer.Typer(
@@ -17,6 +18,8 @@ app = typer.Typer(
     no_args_is_help=True,
 )
 console = Console()
+config_app = typer.Typer(help="Manage zembra system configuration.")
+app.add_typer(config_app, name="config")
 
 
 def parse_tag_values(tag_values: list[str] | None) -> list[str]:
@@ -52,16 +55,16 @@ def fail_command(message: str) -> None:
     raise typer.Exit(code=1)
 
 
-def require_initialized_database() -> None:
-    """Validate that the default local database exists and has core tables.
+def require_initialized_database(database_path) -> None:
+    """Validate that a configured local database exists and has core tables.
 
     Args:
-        None.
+        database_path: SQLite database path loaded from zembra config.
 
     Returns:
         None. The command exits when the database is unavailable.
     """
-    database_path = DEFAULT_DATABASE_PATH.expanduser()
+    database_path = database_path.expanduser()
     if not database_path.exists():
         fail_command(f"Database is not initialized at {database_path}")
 
@@ -128,6 +131,29 @@ def hello(
     console.print(f"Hello, {name}. Zembra is ready.")
 
 
+@config_app.command()
+def database(
+    file_path: Annotated[
+        str,
+        typer.Argument(help="SQLite database path to store in the zembra config."),
+    ],
+) -> None:
+    """Write the zembra database path to the shared config file.
+
+    Args:
+        file_path: SQLite database path to store.
+
+    Returns:
+        None. The command prints a success message or exits on failure.
+    """
+    try:
+        config = write_database_path(file_path, default_config_path())
+    except ConfigError as error:
+        fail_command(error.message)
+
+    typer.echo(f"Configured zembra database path: {config.database_path}")
+
+
 @app.command()
 def add(
     note_string_content: Annotated[
@@ -154,8 +180,13 @@ def add(
         None. The command prints JSON on success or exits on failure.
     """
     parsed_tags = parse_tag_values(tags)
-    database_path = DEFAULT_DATABASE_PATH.expanduser()
-    require_initialized_database()
+    try:
+        config = load_config(default_config_path())
+    except ConfigError as error:
+        fail_command(error.message)
+
+    database_path = config.database_path.expanduser()
+    require_initialized_database(database_path)
 
     try:
         with database_connection(database_path) as connection:
