@@ -23,7 +23,7 @@ vendor/zembra-schema
 https://github.com/gawainx/zembra-schema.git
 ```
 
-当前固定版本为 `v0.1.0`，对应 submodule commit `a557f37`。本仓库不复制维护数据表设计正文，数据表说明、SQLite DDL、JSON Schema 和 migration 都以 `vendor/zembra-schema` 为准。
+当前固定版本为 `v0.2.0`，对应 submodule commit `cd37a7e`。本仓库不复制维护数据表设计正文，数据表说明、SQLite DDL、JSON Schema 和 migration 都以 `vendor/zembra-schema` 为准。
 
 首次拉取本仓库后，需要初始化 submodule：
 

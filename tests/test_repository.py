@@ -212,6 +212,7 @@ def test_create_note_writes_field_tags_and_initial_revision(
     note = repository.create_note("hello", field_name="work", tag_names=["python", "cli"])
 
     assert note.content == "hello"
+    assert note.role == "Human"
     assert note.field_id is not None
     assert note.current_revision_id is not None
     assert [tag.name for tag in repository.list_note_tags(note.id)] == ["cli", "python"]
@@ -220,6 +221,20 @@ def test_create_note_writes_field_tags_and_initial_revision(
     assert len(revisions) == 1
     assert revisions[0].id == note.current_revision_id
     assert revisions[0].content == "hello"
+
+
+def test_create_note_accepts_agent_role(repository: ZembraRepository) -> None:
+    """Verify note creation persists the shared Agent role.
+
+    Args:
+        repository: Repository fixture.
+
+    Returns:
+        None.
+    """
+    note = repository.create_note("agent note", role="Agent")
+
+    assert note.role == "Agent"
 
 
 def test_update_note_content_writes_revision(repository: ZembraRepository) -> None:

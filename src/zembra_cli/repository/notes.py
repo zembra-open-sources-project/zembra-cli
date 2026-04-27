@@ -1,6 +1,7 @@
 """Repository operations for notes and note revisions."""
 
 from collections.abc import Sequence
+from typing import Literal
 
 from zembra_cli.models import NoteRecord, NoteRevisionRecord
 from zembra_cli.repository.exceptions import (
@@ -22,6 +23,7 @@ class ZembraRepository(FieldTagRepository):
     def create_note(
         self,
         content: str,
+        role: Literal["Human", "Agent"] = "Human",
         field_name: str | None = None,
         tag_names: Sequence[str] | None = None,
         device_id: str | None = None,
@@ -30,6 +32,7 @@ class ZembraRepository(FieldTagRepository):
 
         Args:
             content: Note body text.
+            role: Immutable note creation role, either Human or Agent.
             field_name: Optional field name to attach to the note.
             tag_names: Optional tag names to attach to the note.
             device_id: Optional device identifier recorded on the revision.
@@ -46,11 +49,11 @@ class ZembraRepository(FieldTagRepository):
             self.connection.execute(
                 """
                 INSERT INTO notes (
-                    id, content, field_id, created_at, updated_at, current_revision_id
+                    id, content, role, field_id, created_at, updated_at, current_revision_id
                 )
-                VALUES (?, ?, ?, ?, ?, NULL)
+                VALUES (?, ?, ?, ?, ?, ?, NULL)
                 """,
-                (note_id, content, field_id, now, now),
+                (note_id, content, role, field_id, now, now),
             )
             self.connection.execute(
                 """
