@@ -4,10 +4,12 @@ import sqlite3
 
 import pytest
 
-from zembra_cli.db import (
+from zembra_cli.database import (
     CORE_TABLES,
+    DatabaseSchemaIncompleteError,
     database_connection,
     initialize_database,
+    initialize_database_file,
     list_user_tables,
     missing_core_tables,
 )
@@ -103,3 +105,63 @@ def test_missing_core_tables_reports_absent_schema(tmp_path) -> None:
 
     with database_connection(database_path) as connection:
         assert missing_core_tables(connection) == set(CORE_TABLES)
+
+
+def test_initialize_database_file_creates_database_and_parent_directory(tmp_path) -> None:
+    """Verify file initialization creates parent directories and core tables.
+
+    Args:
+        tmp_path: Pytest temporary directory fixture.
+
+    Returns:
+        None.
+    """
+    database_path = tmp_path / "nested" / "zembra.sqlite3"
+
+    result = initialize_database_file(database_path)
+
+    assert result.database_path == database_path
+    assert result.status == "created"
+    with database_connection(database_path) as connection:
+        assert missing_core_tables(connection) == set()
+
+
+def test_initialize_database_file_skips_complete_database(tmp_path) -> None:
+    """Verify an existing complete database is treated as initialized.
+
+    Args:
+        tmp_path: Pytest temporary directory fixture.
+
+    Returns:
+        None.
+    """
+    database_path = tmp_path / "zembra.sqlite3"
+    initialize_database_file(database_path)
+
+    result = initialize_database_file(database_path)
+
+    assert result.database_path == database_path
+    assert result.status == "skipped"
+
+
+def test_initialize_database_file_rejects_incomplete_database(tmp_path) -> None:
+    """Verify an existing incomplete database is not overwritten.
+
+    Args:
+        tmp_path: Pytest temporary directory fixture.
+
+    Returns:
+        None.
+    """
+    database_path = tmp_path / "zembra.sqlite3"
+    with database_connection(database_path) as connection:
+        connection.execute("CREATE TABLE notes (id TEXT PRIMARY KEY)")
+
+    with pytest.raises(DatabaseSchemaIncompleteError) as error:
+        initialize_database_file(database_path)
+
+    assert error.value.database_path == database_path
+    assert "fields" in error.value.missing_tables
+    with database_connection(database_path) as connection:
+        assert "notes" in list_user_tables(connection)
+        assert missing_core_tables(connection)

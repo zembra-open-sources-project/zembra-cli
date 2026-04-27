@@ -11,7 +11,7 @@ from typer.testing import CliRunner
 from zembra_cli import __version__, cli
 from zembra_cli.cli import app
 from zembra_cli.config import load_config
-from zembra_cli.db import database_connection, initialize_database
+from zembra_cli.database import database_connection, initialize_database, missing_core_tables
 from zembra_cli.models import NoteRecord
 from zembra_cli.repository import (
     AmbiguousNoteReferenceError,
@@ -356,6 +356,127 @@ def test_config_database_command_preserves_existing_fields(tmp_path, monkeypatch
     config_text = config_path.read_text(encoding="utf-8")
     assert 'theme = "light"' in config_text
     assert f'path = "{database_path}"' in config_text
+
+
+def test_init_command_creates_default_database_and_config(tmp_path, monkeypatch) -> None:
+    """Verify init creates the default database and config paths.
+
+    Args:
+        tmp_path: Pytest temporary directory fixture.
+        monkeypatch: Pytest monkeypatch fixture.
+
+    Returns:
+        None.
+    """
+    config_path = tmp_path / ".zembra.env"
+    database_path = tmp_path / ".zembra" / "zembra.sqlite3"
+    monkeypatch.setattr(cli, "default_config_path", lambda: config_path)
+    monkeypatch.setattr(cli, "DEFAULT_DATABASE_PATH", database_path)
+
+    result = runner.invoke(app, ["init"])
+
+    assert result.exit_code == 0
+    assert "Initialized zembra." in result.stdout
+    assert f"Database: {database_path} (created)" in result.stdout
+    assert f"Config: {config_path} (created)" in result.stdout
+    assert load_config(config_path).database_path == database_path
+    with database_connection(database_path) as connection:
+        assert missing_core_tables(connection) == set()
+
+
+def test_init_command_updates_config_and_skips_complete_database(tmp_path, monkeypatch) -> None:
+    """Verify init is safe to rerun against a complete database.
+
+    Args:
+        tmp_path: Pytest temporary directory fixture.
+        monkeypatch: Pytest monkeypatch fixture.
+
+    Returns:
+        None.
+    """
+    config_path = tmp_path / ".zembra.env"
+    database_path = tmp_path / "zembra.sqlite3"
+    config_path.write_text('theme = "light"\n', encoding="utf-8")
+    monkeypatch.setattr(cli, "default_config_path", lambda: config_path)
+
+    first_result = runner.invoke(app, ["init", "--database", str(database_path)])
+    second_result = runner.invoke(app, ["init", "--database", str(database_path)])
+
+    assert first_result.exit_code == 0
+    assert second_result.exit_code == 0
+    assert f"Database: {database_path} (already initialized)" in second_result.stdout
+    assert f"Config: {config_path} (updated)" in second_result.stdout
+    config_text = config_path.read_text(encoding="utf-8")
+    assert 'theme = "light"' in config_text
+    assert f'path = "{database_path}"' in config_text
+
+
+def test_init_command_rejects_incomplete_database(tmp_path, monkeypatch) -> None:
+    """Verify init does not overwrite an existing incomplete database.
+
+    Args:
+        tmp_path: Pytest temporary directory fixture.
+        monkeypatch: Pytest monkeypatch fixture.
+
+    Returns:
+        None.
+    """
+    config_path = tmp_path / ".zembra.env"
+    database_path = tmp_path / "zembra.sqlite3"
+    monkeypatch.setattr(cli, "default_config_path", lambda: config_path)
+    with database_connection(database_path) as connection:
+        connection.execute("CREATE TABLE notes (id TEXT PRIMARY KEY)")
+
+    result = runner.invoke(app, ["init", "--database", str(database_path)])
+
+    assert result.exit_code == 1
+    assert f"Database already exists at {database_path}" in result.stderr
+    assert not config_path.exists()
+
+
+def test_init_command_reports_invalid_existing_config(tmp_path, monkeypatch) -> None:
+    """Verify init reports invalid TOML config without hiding the parse error.
+
+    Args:
+        tmp_path: Pytest temporary directory fixture.
+        monkeypatch: Pytest monkeypatch fixture.
+
+    Returns:
+        None.
+    """
+    config_path = tmp_path / ".zembra.env"
+    database_path = tmp_path / "zembra.sqlite3"
+    config_path.write_text("[database\n", encoding="utf-8")
+    monkeypatch.setattr(cli, "default_config_path", lambda: config_path)
+
+    result = runner.invoke(app, ["init", "--database", str(database_path)])
+
+    assert result.exit_code == 1
+    assert "Config file is not valid TOML" in result.stderr
+
+
+def test_init_command_allows_add_to_use_initialized_database(tmp_path, monkeypatch) -> None:
+    """Verify add can use the config and database created by init.
+
+    Args:
+        tmp_path: Pytest temporary directory fixture.
+        monkeypatch: Pytest monkeypatch fixture.
+
+    Returns:
+        None.
+    """
+    config_path = tmp_path / ".zembra.env"
+    database_path = tmp_path / "zembra.sqlite3"
+    monkeypatch.setattr(cli, "default_config_path", lambda: config_path)
+
+    init_result = runner.invoke(app, ["init", "--database", str(database_path)])
+    add_result = runner.invoke(app, ["add", "hello from init", "--field", "work"])
+
+    assert init_result.exit_code == 0
+    assert add_result.exit_code == 0
+    payload = json.loads(add_result.stdout)
+    assert payload["note"]["content"] == "hello from init"
+    assert payload["metadata"]["field"] == "work"
 
 
 def test_add_command_reports_missing_config(tmp_path, monkeypatch) -> None:

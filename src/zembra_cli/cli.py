@@ -2,6 +2,7 @@
 
 import json
 import sqlite3
+from pathlib import Path
 from typing import Annotated, Literal
 
 import typer
@@ -9,7 +10,13 @@ from rich.console import Console
 
 from zembra_cli import __version__
 from zembra_cli.config import ConfigError, default_config_path, load_config, write_database_path
-from zembra_cli.db import database_connection, missing_core_tables
+from zembra_cli.database import (
+    DEFAULT_DATABASE_PATH,
+    DatabaseInitializationError,
+    database_connection,
+    initialize_database_file,
+    missing_core_tables,
+)
 from zembra_cli.interactive import render_intro_for_repository, run_interactive_session
 from zembra_cli.repository import (
     AmbiguousNoteReferenceError,
@@ -219,6 +226,45 @@ def hello(
         None.
     """
     console.print(f"Hello, {name}. Zembra is ready.")
+
+
+@app.command()
+def init(
+    database_path: Annotated[
+        Path | None,
+        typer.Option(
+            "--database",
+            help="SQLite database path to initialize and store in the zembra config.",
+        ),
+    ] = None,
+) -> None:
+    """Initialize the local zembra database and shared config.
+
+    Args:
+        database_path: SQLite database path to initialize.
+
+    Returns:
+        None. The command prints initialization status or exits on failure.
+    """
+    resolved_database_path = database_path if database_path is not None else DEFAULT_DATABASE_PATH
+    config_path = default_config_path()
+    config_status = "updated" if config_path.exists() else "created"
+
+    try:
+        database_result = initialize_database_file(resolved_database_path)
+        config = write_database_path(database_result.database_path, config_path)
+    except DatabaseInitializationError as error:
+        fail_command(error.message)
+    except ConfigError as error:
+        fail_command(error.message)
+
+    database_status = (
+        "already initialized" if database_result.status == "skipped" else database_result.status
+    )
+    typer.echo("Initialized zembra.")
+    typer.echo(f"Database: {database_result.database_path} ({database_status})")
+    typer.echo(f"Config: {config_path} ({config_status})")
+    typer.echo(f"Configured database path: {config.database_path}")
 
 
 @config_app.command()

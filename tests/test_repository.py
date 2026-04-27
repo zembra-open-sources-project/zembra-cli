@@ -5,7 +5,7 @@ from collections.abc import Iterator
 
 import pytest
 
-from zembra_cli.db import database_connection, initialize_database
+from zembra_cli.database import database_connection, initialize_database
 from zembra_cli.repository import (
     AmbiguousNoteReferenceError,
     InvalidNoteReferenceError,
