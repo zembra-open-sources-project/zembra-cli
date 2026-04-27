@@ -380,6 +380,96 @@ def test_add_command_reports_missing_config(tmp_path, monkeypatch) -> None:
     ) in result.stderr
 
 
+def test_run_command_reports_missing_config(tmp_path, monkeypatch) -> None:
+    """Verify run prompts users to create the zembra config when missing.
+
+    Args:
+        tmp_path: Pytest temporary directory fixture.
+        monkeypatch: Pytest monkeypatch fixture.
+
+    Returns:
+        None.
+    """
+    config_path = tmp_path / ".zembra.env"
+    monkeypatch.setattr(cli, "default_config_path", lambda: config_path)
+
+    result = runner.invoke(app, ["run"])
+
+    assert result.exit_code == 1
+    assert (
+        f"Config file is missing at {config_path}. "
+        "Create it with: zembra-cli config database <file-path>"
+    ) in result.stderr
+
+
+def test_run_command_reports_missing_database(tmp_path, monkeypatch) -> None:
+    """Verify run fails clearly when the configured database file is absent.
+
+    Args:
+        tmp_path: Pytest temporary directory fixture.
+        monkeypatch: Pytest monkeypatch fixture.
+
+    Returns:
+        None.
+    """
+    database_path = tmp_path / "missing.sqlite3"
+    configure_cli_database(monkeypatch, tmp_path, database_path)
+
+    result = runner.invoke(app, ["run"])
+
+    assert result.exit_code == 1
+    assert f"Database is not initialized at {database_path}" in result.stderr
+
+
+def test_run_command_starts_intro_and_interactive_session(tmp_path, monkeypatch) -> None:
+    """Verify run loads a configured database and starts the interactive loop.
+
+    Args:
+        tmp_path: Pytest temporary directory fixture.
+        monkeypatch: Pytest monkeypatch fixture.
+
+    Returns:
+        None.
+    """
+    database_path = tmp_path / "zembra.sqlite3"
+    initialize_cli_database(database_path)
+    configure_cli_database(monkeypatch, tmp_path, database_path)
+    calls: list[str] = []
+
+    def fake_render_intro(repository, output_console, rendered_database_path) -> None:
+        """Record intro rendering without printing the full Rich panel.
+
+        Args:
+            repository: Repository created by the run command.
+            output_console: Console supplied by the CLI.
+            rendered_database_path: Database path passed to the intro renderer.
+
+        Returns:
+            None.
+        """
+        calls.append(f"intro:{rendered_database_path}:{len(repository.list_notes())}")
+
+    def fake_run_interactive_session(repository, output_console) -> None:
+        """Record interactive session startup without blocking for input.
+
+        Args:
+            repository: Repository created by the run command.
+            output_console: Console supplied by the CLI.
+
+        Returns:
+            None.
+        """
+        calls.append(f"session:{len(repository.list_notes())}")
+
+    monkeypatch.setattr(cli, "render_intro_for_repository", fake_render_intro)
+    monkeypatch.setattr(cli, "run_interactive_session", fake_run_interactive_session)
+
+    result = runner.invoke(app, ["run"])
+
+    assert result.exit_code == 0
+    assert calls == [f"intro:{database_path}:0", "session:0"]
+
+
 def test_hello_command_does_not_require_config(tmp_path, monkeypatch) -> None:
     """Verify non-database commands do not load the zembra config.
 

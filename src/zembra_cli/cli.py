@@ -10,6 +10,7 @@ from rich.console import Console
 from zembra_cli import __version__
 from zembra_cli.config import ConfigError, default_config_path, load_config, write_database_path
 from zembra_cli.db import database_connection, missing_core_tables
+from zembra_cli.interactive import render_intro_for_repository, run_interactive_session
 from zembra_cli.repository import (
     AmbiguousNoteReferenceError,
     InvalidNoteReferenceError,
@@ -304,3 +305,30 @@ def add(
         },
     }
     typer.echo(json.dumps(payload, ensure_ascii=False))
+
+
+@app.command()
+def run() -> None:
+    """Start the persistent interactive note capture session.
+
+    Args:
+        None.
+
+    Returns:
+        None. The command exits when the user enters /exit or sends EOF.
+    """
+    try:
+        config = load_config(default_config_path())
+    except ConfigError as error:
+        fail_command(error.message)
+
+    database_path = config.database_path.expanduser()
+    require_initialized_database(database_path)
+
+    try:
+        with database_connection(database_path) as connection:
+            repository = ZembraRepository(connection)
+            render_intro_for_repository(repository, console, database_path)
+            run_interactive_session(repository, console)
+    except sqlite3.Error as error:
+        fail_command(f"Could not open the Zembra database: {error}")
