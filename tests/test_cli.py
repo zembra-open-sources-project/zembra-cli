@@ -159,8 +159,69 @@ def test_add_command_creates_note_with_repeated_tags(tmp_path, monkeypatch) -> N
     payload = json.loads(result.stdout)
     assert set(payload) == {"note", "metadata"}
     assert payload["note"]["content"] == "hello world"
+    assert payload["note"]["role"] == "Human"
     assert payload["note"]["field_id"] is not None
-    assert payload["metadata"] == {"field": "work", "tags": ["python", "cli"]}
+    assert payload["metadata"] == {"field": "work", "tags": ["python", "cli"], "role": "Human"}
+
+
+@pytest.mark.parametrize(
+    ("role_value", "expected_role"),
+    [
+        ("Agent", "Agent"),
+        ("agent", "Agent"),
+        ("a", "Agent"),
+        ("Human", "Human"),
+        ("human", "Human"),
+        ("h", "Human"),
+    ],
+)
+def test_add_command_accepts_role_variants(
+    tmp_path,
+    monkeypatch,
+    role_value: str,
+    expected_role: str,
+) -> None:
+    """Verify add normalizes supported role option variants.
+
+    Args:
+        tmp_path: Pytest temporary directory fixture.
+        monkeypatch: Pytest monkeypatch fixture.
+        role_value: Raw role option supplied to the CLI.
+        expected_role: Shared schema role expected in command output.
+
+    Returns:
+        None.
+    """
+    database_path = tmp_path / "zembra.sqlite3"
+    initialize_cli_database(database_path)
+    configure_cli_database(monkeypatch, tmp_path, database_path)
+
+    result = runner.invoke(app, ["add", "role note", "--field", "work", "--role", role_value])
+
+    assert result.exit_code == 0
+    payload = json.loads(result.stdout)
+    assert payload["note"]["role"] == expected_role
+    assert payload["metadata"]["role"] == expected_role
+
+
+def test_add_command_rejects_unknown_role(tmp_path, monkeypatch) -> None:
+    """Verify add reports an invalid role before creating a note.
+
+    Args:
+        tmp_path: Pytest temporary directory fixture.
+        monkeypatch: Pytest monkeypatch fixture.
+
+    Returns:
+        None.
+    """
+    database_path = tmp_path / "zembra.sqlite3"
+    initialize_cli_database(database_path)
+    configure_cli_database(monkeypatch, tmp_path, database_path)
+
+    result = runner.invoke(app, ["add", "role note", "--field", "work", "--role", "system"])
+
+    assert result.exit_code == 1
+    assert "Role must be one of" in result.stderr
 
 
 def test_add_command_parses_comma_and_mixed_tags(tmp_path, monkeypatch) -> None:
@@ -208,6 +269,7 @@ def test_add_command_preserves_shell_received_content(tmp_path, monkeypatch) -> 
     payload = json.loads(result.stdout)
     assert payload["note"]["content"] == content
     assert payload["metadata"]["tags"] == []
+    assert payload["metadata"]["role"] == "Human"
 
 
 def test_add_command_reports_missing_database(tmp_path, monkeypatch) -> None:

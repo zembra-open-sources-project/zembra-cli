@@ -2,7 +2,7 @@
 
 import json
 import sqlite3
-from typing import Annotated
+from typing import Annotated, Literal
 
 import typer
 from rich.console import Console
@@ -46,6 +46,28 @@ def parse_tag_values(tag_values: list[str] | None) -> list[str]:
                 parsed_tags.append(tag)
                 seen_tags.add(tag)
     return parsed_tags
+
+
+def parse_role_value(role_value: str) -> Literal["Human", "Agent"]:
+    """Normalize CLI role aliases to shared schema role values.
+
+    Args:
+        role_value: User-provided role option value.
+
+    Returns:
+        Shared schema role value accepted by the database.
+    """
+    normalized_role = role_value.strip().lower()
+    role_aliases: dict[str, Literal["Human", "Agent"]] = {
+        "human": "Human",
+        "h": "Human",
+        "agent": "Agent",
+        "a": "Agent",
+    }
+    try:
+        return role_aliases[normalized_role]
+    except KeyError:
+        fail_command('Role must be one of: Human, Agent, human, agent, h, a.')
 
 
 def fail_command(message: str) -> None:
@@ -235,6 +257,10 @@ def add(
         list[str] | None,
         typer.Option("--tags", help="Tag name or comma-separated tag names."),
     ] = None,
+    role: Annotated[
+        str,
+        typer.Option("--role", help="Creation role: Human, Agent, h, or a."),
+    ] = "Human",
 ) -> None:
     """Create a note with one field and zero or more tags.
 
@@ -242,11 +268,13 @@ def add(
         note_string_content: Note body received from the shell.
         field: Field name to associate with the note.
         tags: Raw tag option values, supporting repeats and comma-separated values.
+        role: Raw note creation role option value.
 
     Returns:
         None. The command prints JSON on success or exits on failure.
     """
     parsed_tags = parse_tag_values(tags)
+    parsed_role = parse_role_value(role)
     try:
         config = load_config(default_config_path())
     except ConfigError as error:
@@ -260,6 +288,7 @@ def add(
             repository = ZembraRepository(connection)
             note = repository.create_note(
                 note_string_content,
+                role=parsed_role,
                 field_name=field,
                 tag_names=parsed_tags,
             )
@@ -271,6 +300,7 @@ def add(
         "metadata": {
             "field": field,
             "tags": parsed_tags,
+            "role": parsed_role,
         },
     }
     typer.echo(json.dumps(payload, ensure_ascii=False))
