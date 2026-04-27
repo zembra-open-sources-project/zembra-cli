@@ -9,6 +9,7 @@ from zembra_cli.interactive import (
     DEFAULT_INTERACTIVE_FIELD,
     InteractiveNoteInput,
     parse_interactive_note_input,
+    read_interactive_line,
     render_help,
     render_intro,
     run_interactive_session,
@@ -228,6 +229,18 @@ def test_run_interactive_session_saves_note_and_exits() -> None:
     output = console.export_text()
     assert "Saved note abcdef01 · 09:30" in output
     assert "Goodbye." in output
+
+
+def test_run_interactive_session_defaults_to_unicode_aware_input() -> None:
+    """Verify the production interactive loop uses the Unicode-aware input provider.
+
+    Args:
+        None.
+
+    Returns:
+        None.
+    """
+    assert run_interactive_session.__defaults__[0] is read_interactive_line
 
 
 def test_run_interactive_session_handles_help_empty_and_unknown_commands() -> None:

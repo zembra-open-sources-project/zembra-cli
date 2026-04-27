@@ -7,6 +7,7 @@ from dataclasses import dataclass
 from datetime import datetime
 from pathlib import Path
 
+from prompt_toolkit import prompt
 from rich.align import Align
 from rich.console import Console
 from rich.panel import Panel
@@ -138,10 +139,22 @@ def render_help(console: Console) -> None:
     console.print(help_table)
 
 
+def read_interactive_line(prompt_text: str) -> str:
+    """Read one interactive command line with Unicode-aware editing.
+
+    Args:
+        prompt_text: Prompt text displayed before the editable input line.
+
+    Returns:
+        User-entered text after the user submits the line.
+    """
+    return prompt(prompt_text)
+
+
 def run_interactive_session(
     repository: ZembraRepository,
     console: Console,
-    input_func: Callable[[str], str] = input,
+    input_func: Callable[[str], str] = read_interactive_line,
     now_func: Callable[[], datetime] = datetime.now,
 ) -> None:
     """Run the persistent interactive note capture loop.
