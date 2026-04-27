@@ -12,6 +12,7 @@
 4. 根据执行计划进行开发，并更新执行计划中的任务状态，完成每个 Stage 后，如果修改了任何代码，必须进行一次 git 提交。
 5. 用户验证后，将开发计划移动到 docs/exec-plans/completed/，并更新`docs/PROGRESS.md`文件。在未经用户允许，禁止擅自归档
 6. 所有文档使用 markdown 格式撰写，语言为简体中文，关键术语、函数接口等信息可保留英文
+7. Bugfix 可采用轻量流程：当用户明确标记为 bugfix，且修复范围清晰、无需多轮产品决策时，可将需求澄清、问题分析、设计方案、开发计划与验收记录合并写入 `docs/bugfix/` 下单个文件。该文件仍需包含需求编号、影响范围、根因判断、改动范围和验证结果；完成用户验收后，在 `docs/PROGRESS.md` 记录同一编号。
 
 ### 初始化规则
 - 初始化命令只创建缺失目录和文件。
@@ -27,6 +28,7 @@
 - docs/product-specs/ 存放功能规格、用户流程、验收标准。
 - docs/exec-plans/active/ 存放进行中的执行计划，可按模块建立子目录。
 - docs/exec-plans/completed/ 存放已完成且已通过用户验收的执行计划，可按模块建立子目录。
+- docs/bugfix/ 存放轻量 bugfix 记录，可合并需求澄清、设计、计划和验收信息。
 - docs/exec-plans/tech-debt-tracker.md 记录项目的技术债。
 - docs/references/ 存放外部依赖、协议、框架和工具参考资料摘要。
 - docs/generated/ 存放自动生成文档；默认只读，不手工维护。
@@ -57,6 +59,7 @@
 
 模块化文档落点：
 - docs/request-clarify/、docs/design-docs/、docs/exec-plans/active/ 和 docs/exec-plans/completed/ 支持按模块建立子目录。
+- docs/bugfix/ 默认按 bugfix 编号平铺，必要时可按模块建立子目录。
 - 模块子目录命名应与代码模块、业务域或长期维护边界一致。
 - 同一需求的澄清、设计、计划文档应使用同名文件，分别落入对应文档层。
 
@@ -64,6 +67,7 @@
 - 默认命名格式为 rNNN-request-desc.md。
 - 启用模块编号时，使用 r + 模块前缀 + 三位递增编号 + request-desc 的格式，例如 rb001-database-infrastructure.md。
 - 当前模块前缀：database 使用 rbNNN，cli 使用 rcNNN。
+- Bugfix 编号使用 bfxNNN，文件名格式为 bfxNNN-request-desc.md。
 - 新增模块前缀必须先写入 AGENTS.md，再创建对应需求文档。
 - 同一需求在 request-clarify、design-docs、exec-plans 中使用同名文件。
 - 日期只允许写在文档头部，不放入文件名。
