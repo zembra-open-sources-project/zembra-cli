@@ -33,7 +33,9 @@ app = typer.Typer(
 )
 console = Console()
 config_app = typer.Typer(help="Manage zembra system configuration.")
+list_app = typer.Typer(help="List zembra fields and tags.")
 app.add_typer(config_app, name="config")
+app.add_typer(list_app, name="list")
 
 
 def parse_tag_values(tag_values: list[str] | None) -> list[str]:
@@ -125,6 +127,36 @@ def format_ambiguous_note_reference(error: AmbiguousNoteReferenceError) -> str:
     for candidate in error.candidates:
         lines.append(f"- {candidate.id[:8]}  {summarize_note_content(candidate.content)}")
     return "\n".join(lines)
+
+
+def format_compact_names(names: list[str]) -> str:
+    """Format names as compact CLI output.
+
+    Args:
+        names: Ordered names to render.
+
+    Returns:
+        A single-line string joined by two spaces.
+    """
+    return "  ".join(names)
+
+
+def select_list_names(names: list[str], number: int, list_all: bool) -> list[str]:
+    """Apply list command limit options to ordered names.
+
+    Args:
+        names: Ordered names from the repository.
+        number: Maximum number of names to return when list_all is false.
+        list_all: Whether all names should be returned.
+
+    Returns:
+        Names selected for output.
+    """
+    if number < 1:
+        fail_command("Number must be greater than or equal to 1.")
+    if list_all:
+        return names
+    return names[:number]
 
 
 def resolve_note_reference(repository: ZembraRepository, note_ref: str) -> str:
@@ -288,6 +320,84 @@ def database(
         fail_command(error.message)
 
     typer.echo(f"Configured zembra database path: {config.database_path}")
+
+
+@list_app.command("tags")
+def list_tags(
+    number: Annotated[
+        int,
+        typer.Option("-n", "--number", help="Maximum number of tags to list."),
+    ] = 5,
+    list_all: Annotated[
+        bool,
+        typer.Option("-a", "--all", help="List all tags and ignore --number."),
+    ] = False,
+) -> None:
+    """List tag names in compact form.
+
+    Args:
+        number: Maximum number of tag names to print unless list_all is true.
+        list_all: Whether to print every tag name.
+
+    Returns:
+        None. The command prints compact tag names or exits on failure.
+    """
+    try:
+        config = load_config(default_config_path())
+    except ConfigError as error:
+        fail_command(error.message)
+
+    database_path = config.database_path.expanduser()
+    require_initialized_database(database_path)
+
+    try:
+        with database_connection(database_path) as connection:
+            repository = ZembraRepository(connection)
+            names = [tag.name for tag in repository.list_tags()]
+    except sqlite3.Error as error:
+        fail_command(f"Could not list tags: {error}")
+
+    selected_names = select_list_names(names, number, list_all)
+    typer.echo(format_compact_names(selected_names))
+
+
+@list_app.command("fields")
+def list_fields(
+    number: Annotated[
+        int,
+        typer.Option("-n", "--number", help="Maximum number of fields to list."),
+    ] = 5,
+    list_all: Annotated[
+        bool,
+        typer.Option("-a", "--all", help="List all fields and ignore --number."),
+    ] = False,
+) -> None:
+    """List field names in compact form.
+
+    Args:
+        number: Maximum number of field names to print unless list_all is true.
+        list_all: Whether to print every field name.
+
+    Returns:
+        None. The command prints compact field names or exits on failure.
+    """
+    try:
+        config = load_config(default_config_path())
+    except ConfigError as error:
+        fail_command(error.message)
+
+    database_path = config.database_path.expanduser()
+    require_initialized_database(database_path)
+
+    try:
+        with database_connection(database_path) as connection:
+            repository = ZembraRepository(connection)
+            names = [field.name for field in repository.list_fields()]
+    except sqlite3.Error as error:
+        fail_command(f"Could not list fields: {error}")
+
+    selected_names = select_list_names(names, number, list_all)
+    typer.echo(format_compact_names(selected_names))
 
 
 @app.command()

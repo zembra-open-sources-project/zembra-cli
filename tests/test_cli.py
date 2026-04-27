@@ -18,6 +18,7 @@ from zembra_cli.repository import (
     InvalidNoteReferenceError,
     NoteReferenceTooShortError,
     RecordNotFoundError,
+    ZembraRepository,
 )
 
 runner = CliRunner()
@@ -51,6 +52,25 @@ def initialize_cli_database(database_path) -> None:
     """
     with database_connection(database_path) as connection:
         initialize_database(connection)
+
+
+def seed_cli_list_items(database_path, fields: list[str], tags: list[str]) -> None:
+    """Create fields and tags for list command tests.
+
+    Args:
+        database_path: Temporary database path used by the CLI.
+        fields: Field names to create.
+        tags: Tag names to create.
+
+    Returns:
+        None.
+    """
+    with database_connection(database_path) as connection:
+        repository = ZembraRepository(connection)
+        for field in fields:
+            repository.get_or_create_field(field)
+        for tag in tags:
+            repository.get_or_create_tag(tag)
 
 
 class FakeNoteReferenceRepository:
@@ -309,6 +329,121 @@ def test_add_command_reports_uninitialized_database(tmp_path, monkeypatch) -> No
 
     assert result.exit_code == 1
     assert f"Database is not initialized at {database_path}" in result.stderr
+
+
+def test_list_tags_defaults_to_first_five_names(tmp_path, monkeypatch) -> None:
+    """Verify list tags prints the first five names in compact form.
+
+    Args:
+        tmp_path: Pytest temporary directory fixture.
+        monkeypatch: Pytest monkeypatch fixture.
+
+    Returns:
+        None.
+    """
+    database_path = tmp_path / "zembra.sqlite3"
+    initialize_cli_database(database_path)
+    configure_cli_database(monkeypatch, tmp_path, database_path)
+    seed_cli_list_items(
+        database_path,
+        fields=[],
+        tags=["gamma", "alpha", "zeta", "beta", "epsilon", "delta"],
+    )
+
+    result = runner.invoke(app, ["list", "tags"])
+
+    assert result.exit_code == 0
+    assert result.stdout == "alpha  beta  delta  epsilon  gamma\n"
+
+
+def test_list_fields_accepts_number_limit(tmp_path, monkeypatch) -> None:
+    """Verify list fields applies the explicit number limit.
+
+    Args:
+        tmp_path: Pytest temporary directory fixture.
+        monkeypatch: Pytest monkeypatch fixture.
+
+    Returns:
+        None.
+    """
+    database_path = tmp_path / "zembra.sqlite3"
+    initialize_cli_database(database_path)
+    configure_cli_database(monkeypatch, tmp_path, database_path)
+    seed_cli_list_items(
+        database_path,
+        fields=["research", "admin", "writing", "coding"],
+        tags=[],
+    )
+
+    result = runner.invoke(app, ["list", "fields", "-n", "3"])
+
+    assert result.exit_code == 0
+    assert result.stdout == "admin  coding  research\n"
+
+
+def test_list_tags_all_overrides_number_limit(tmp_path, monkeypatch) -> None:
+    """Verify list tags -a prints every tag even when -n is supplied.
+
+    Args:
+        tmp_path: Pytest temporary directory fixture.
+        monkeypatch: Pytest monkeypatch fixture.
+
+    Returns:
+        None.
+    """
+    database_path = tmp_path / "zembra.sqlite3"
+    initialize_cli_database(database_path)
+    configure_cli_database(monkeypatch, tmp_path, database_path)
+    seed_cli_list_items(
+        database_path,
+        fields=[],
+        tags=["gamma", "alpha", "zeta", "beta", "epsilon", "delta"],
+    )
+
+    result = runner.invoke(app, ["list", "tags", "-n", "2", "-a"])
+
+    assert result.exit_code == 0
+    assert result.stdout == "alpha  beta  delta  epsilon  gamma  zeta\n"
+
+
+def test_list_fields_empty_database_outputs_empty_content(tmp_path, monkeypatch) -> None:
+    """Verify list fields succeeds with empty output when no fields exist.
+
+    Args:
+        tmp_path: Pytest temporary directory fixture.
+        monkeypatch: Pytest monkeypatch fixture.
+
+    Returns:
+        None.
+    """
+    database_path = tmp_path / "zembra.sqlite3"
+    initialize_cli_database(database_path)
+    configure_cli_database(monkeypatch, tmp_path, database_path)
+
+    result = runner.invoke(app, ["list", "fields"])
+
+    assert result.exit_code == 0
+    assert result.stdout == "\n"
+
+
+def test_list_tags_rejects_invalid_number(tmp_path, monkeypatch) -> None:
+    """Verify list tags rejects non-positive number limits.
+
+    Args:
+        tmp_path: Pytest temporary directory fixture.
+        monkeypatch: Pytest monkeypatch fixture.
+
+    Returns:
+        None.
+    """
+    database_path = tmp_path / "zembra.sqlite3"
+    initialize_cli_database(database_path)
+    configure_cli_database(monkeypatch, tmp_path, database_path)
+
+    result = runner.invoke(app, ["list", "tags", "-n", "0"])
+
+    assert result.exit_code == 1
+    assert "Number must be greater than or equal to 1." in result.stderr
 
 
 def test_config_database_command_writes_config(tmp_path, monkeypatch) -> None:
