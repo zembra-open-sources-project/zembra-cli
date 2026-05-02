@@ -3,19 +3,19 @@
 from datetime import datetime
 from pathlib import Path
 
-from prompt_toolkit.buffer import Buffer
+from prompt_toolkit.completion import CompleteEvent
+from prompt_toolkit.document import Document
 from rich.console import Console
 
 from zembra_cli.interactive import (
     DEFAULT_INTERACTIVE_FIELD,
     InteractiveNoteInput,
-    SlashCommandHelpRenderer,
+    SlashCommandCompleter,
     match_slash_commands,
     parse_interactive_note_input,
     read_interactive_line,
     render_help,
     render_intro,
-    render_slash_command_help,
     run_interactive_session,
 )
 
@@ -252,8 +252,8 @@ def test_match_slash_commands_ignores_non_prefix_slashes() -> None:
     assert match_slash_commands("/unknown") == []
 
 
-def test_render_slash_command_help_filters_candidates() -> None:
-    """Verify candidate help output includes only supplied matches.
+def test_slash_command_completer_filters_candidates() -> None:
+    """Verify slash command completions include command help metadata.
 
     Args:
         None.
@@ -261,19 +261,17 @@ def test_render_slash_command_help_filters_candidates() -> None:
     Returns:
         None.
     """
-    console = record_console()
+    completer = SlashCommandCompleter()
+    document = Document("/h")
 
-    render_slash_command_help(console, match_slash_commands("/h"))
+    completions = list(completer.get_completions(document, CompleteEvent()))
 
-    output = console.export_text()
-    assert "Slash Commands" in output
-    assert "/help" in output
-    assert "Show this help" in output
-    assert "/exit" not in output
+    assert [completion.text for completion in completions] == ["/help"]
+    assert [completion.display_meta_text for completion in completions] == ["Show this help"]
 
 
-def test_slash_command_help_renderer_renders_only_when_state_changes() -> None:
-    """Verify prompt text changes render slash help without duplicate output.
+def test_slash_command_completer_ignores_note_content_and_midline_cursor() -> None:
+    """Verify completions only appear for slash-prefixed command input.
 
     Args:
         None.
@@ -281,22 +279,11 @@ def test_slash_command_help_renderer_renders_only_when_state_changes() -> None:
     Returns:
         None.
     """
-    console = record_console()
-    renderer = SlashCommandHelpRenderer(console)
-    buffer = Buffer()
+    completer = SlashCommandCompleter()
 
-    buffer.text = "/"
-    renderer.handle_text_changed(buffer)
-    renderer.handle_text_changed(buffer)
-    buffer.text = "/h"
-    renderer.handle_text_changed(buffer)
-    buffer.text = "note / text"
-    renderer.handle_text_changed(buffer)
-
-    output = console.export_text()
-    assert output.count("Slash Commands") == 2
-    assert output.count("/help") == 2
-    assert output.count("/exit") == 1
+    assert list(completer.get_completions(Document("note / text"), CompleteEvent())) == []
+    midline_document = Document("/help suffix", cursor_position=2)
+    assert list(completer.get_completions(midline_document, CompleteEvent())) == []
 
 
 def test_run_interactive_session_saves_note_and_exits() -> None:

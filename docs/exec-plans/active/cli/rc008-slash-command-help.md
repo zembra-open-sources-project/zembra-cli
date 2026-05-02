@@ -8,7 +8,7 @@
 
 需求澄清文档：`docs/request-clarify/cli/rc008-slash-command-help.md`
 
-## Stage #1: 命令候选模型与渲染
+## Stage #1: 命令候选模型与补全
 
 ### Task #1: 定义斜杠命令候选与前缀匹配
 
@@ -22,17 +22,17 @@
 
 **Expected Verification Result:** 单元测试覆盖 `/`、`/h`、`/e`、未知前缀和 `note / text`。
 
-### Task #2: 新增 Rich 候选帮助表格
+### Task #2: 新增 prompt_toolkit 候选补全
 
 **Status:** Finished
 
 **Files:** Modify `src/zembra_cli/interactive.py`; Modify `tests/test_interactive.py`
 
-**Function:** 用 Rich 表格展示斜杠命令候选列表和说明。
+**Function:** 用 prompt_toolkit completer 展示斜杠命令候选列表和说明。
 
-**Implementation Notes:** 新增 `render_slash_command_help(console, matches)`。表格只展示斜杠命令，不包含普通笔记示例；完整帮助仍由 `render_help()` 负责。
+**Implementation Notes:** 新增 `SlashCommandCompleter`，将匹配结果转换为 `Completion`，使用 `display_meta` 展示说明。候选菜单只展示斜杠命令，不包含普通笔记示例；完整帮助仍由 `render_help()` 负责。
 
-**Expected Verification Result:** 使用 Rich record console 验证候选表格包含匹配命令和说明，且前缀过滤后的输出不包含未匹配命令。
+**Expected Verification Result:** 单元测试验证 completer 返回匹配命令和说明，且前缀过滤后的候选不包含未匹配命令。
 
 ## Stage #2: 输入读取即时提示接入
 
@@ -42,11 +42,11 @@
 
 **Files:** Modify `src/zembra_cli/interactive.py`; Modify `tests/test_interactive.py`
 
-**Function:** 在 `read_interactive_line()` 的输入过程中，当当前内容以 `/` 开头时立即打印匹配的 Rich 候选表格。
+**Function:** 在 `read_interactive_line()` 的输入过程中，当当前内容以 `/` 开头时显示 prompt_toolkit 临时候选菜单。
 
-**Implementation Notes:** 基于 prompt_toolkit 的输入变化回调观察 buffer 文本，并调用匹配与渲染函数。回调记录上一次展示状态，避免同一前缀或同一候选集合重复刷屏。`run_interactive_session()` 的提交后处理逻辑保持不变。
+**Implementation Notes:** `PromptSession` 传入 `SlashCommandCompleter` 并启用 `complete_while_typing`。不使用 Rich 表格打印候选，避免每次按键留下历史输出。`run_interactive_session()` 的提交后处理逻辑保持不变。
 
-**Expected Verification Result:** 测试通过注入或拆分出的回调逻辑验证 `/` 前缀触发候选，普通输入不触发，提交 `/help` 和 `/exit` 的现有行为不变。
+**Expected Verification Result:** 测试验证 `/` 前缀触发候选，普通输入不触发，提交 `/help` 和 `/exit` 的现有行为不变。
 
 ## Stage #3: 验证与计划回写
 
@@ -65,5 +65,8 @@
 ## 验证记录
 
 - 2026.05.03：`uv run pytest tests/test_interactive.py -q`，16 passed。
+- 2026.05.03：`uv run ruff check .`，All checks passed。
+- 2026.05.03：`uv run pytest`，94 passed。
+- 2026.05.03：根据手工反馈修正为 prompt_toolkit 临时候选菜单，移除 Rich 表格打印式候选。
 - 2026.05.03：`uv run ruff check .`，All checks passed。
 - 2026.05.03：`uv run pytest`，94 passed。

@@ -8,7 +8,8 @@ from datetime import datetime
 from pathlib import Path
 
 from prompt_toolkit import PromptSession
-from prompt_toolkit.buffer import Buffer
+from prompt_toolkit.completion import CompleteEvent, Completer, Completion
+from prompt_toolkit.document import Document
 from rich.align import Align
 from rich.console import Console
 from rich.panel import Panel
@@ -112,70 +113,38 @@ def match_slash_commands(input_text: str) -> list[SlashCommandHelp]:
     ]
 
 
-def render_slash_command_help(console: Console, matches: list[SlashCommandHelp]) -> None:
-    """Render slash command candidates as a Rich help table.
-
-    Args:
-        console: Rich console used for terminal output.
-        matches: Slash command help entries to display.
-
-    Returns:
-        None.
-    """
-    help_table = Table(title="Slash Commands", show_header=True, header_style="bold cyan")
-    help_table.add_column("Command")
-    help_table.add_column("Action")
-
-    if matches:
-        for match in matches:
-            help_table.add_row(match.command, match.description)
-    else:
-        help_table.add_row("[dim]No matches[/dim]", "[dim]Try /help or /exit[/dim]")
-
-    console.print(help_table)
-
-
-class SlashCommandHelpRenderer:
-    """Render slash command help when the editable prompt text changes.
+class SlashCommandCompleter(Completer):
+    """Provide transient prompt_toolkit completions for slash commands.
 
     Attributes:
-        console: Rich console used for terminal output.
-        last_rendered_commands: Commands displayed during the previous render.
+        None.
     """
 
-    def __init__(self, console: Console) -> None:
-        """Initialize the slash command renderer.
+    def get_completions(
+        self,
+        document: Document,
+        complete_event: CompleteEvent,
+    ):
+        """Yield slash command completions for the current prompt document.
 
         Args:
-            console: Rich console used for terminal output.
+            document: prompt_toolkit document containing the editable input.
+            complete_event: Completion event metadata supplied by prompt_toolkit.
 
-        Returns:
-            None.
+        Yields:
+            Completion entries for slash commands matching the current prefix.
         """
-        self.console = console
-        self.last_rendered_commands: tuple[str, ...] | None = None
-
-    def handle_text_changed(self, buffer: Buffer) -> None:
-        """Render slash command help when the current input needs a new table.
-
-        Args:
-            buffer: prompt_toolkit buffer whose text changed.
-
-        Returns:
-            None.
-        """
-        input_text = buffer.text
-        if not input_text.startswith("/"):
-            self.last_rendered_commands = None
+        input_text = document.text_before_cursor
+        if document.cursor_position != len(document.text) or not input_text.startswith("/"):
             return
 
-        matches = match_slash_commands(input_text)
-        rendered_commands = tuple(match.command for match in matches)
-        if rendered_commands == self.last_rendered_commands:
-            return
-
-        self.last_rendered_commands = rendered_commands
-        render_slash_command_help(self.console, matches)
+        for match in match_slash_commands(input_text):
+            yield Completion(
+                match.command,
+                start_position=-len(input_text),
+                display=match.command,
+                display_meta=match.description,
+            )
 
 
 def render_intro(console: Console, database_path: Path, note_count: int) -> None:
@@ -245,19 +214,19 @@ def render_help(console: Console) -> None:
     console.print(help_table)
 
 
-def read_interactive_line(prompt_text: str, console: Console | None = None) -> str:
+def read_interactive_line(prompt_text: str) -> str:
     """Read one interactive command line with Unicode-aware editing.
 
     Args:
         prompt_text: Prompt text displayed before the editable input line.
-        console: Rich console used to render slash command candidate help.
 
     Returns:
         User-entered text after the user submits the line.
     """
-    session = PromptSession()
-    slash_help_renderer = SlashCommandHelpRenderer(console or Console())
-    session.default_buffer.on_text_changed += slash_help_renderer.handle_text_changed
+    session = PromptSession(
+        completer=SlashCommandCompleter(),
+        complete_while_typing=True,
+    )
     return session.prompt(prompt_text)
 
 
@@ -280,10 +249,7 @@ def run_interactive_session(
     """
     while True:
         try:
-            if input_func is read_interactive_line:
-                raw_input = read_interactive_line("zembra> ", console=console)
-            else:
-                raw_input = input_func("zembra> ")
+            raw_input = input_func("zembra> ")
         except EOFError:
             console.print("Goodbye.")
             return
