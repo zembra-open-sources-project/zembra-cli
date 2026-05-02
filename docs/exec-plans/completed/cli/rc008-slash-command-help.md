@@ -54,7 +54,7 @@
 
 **Status:** Finished
 
-**Files:** Modify `docs/exec-plans/active/cli/rc008-slash-command-help.md`; Verify full repository
+**Files:** Modify `docs/exec-plans/completed/cli/rc008-slash-command-help.md`; Verify full repository
 
 **Function:** 运行静态检查和全量测试，并把实现过程、验证结果和任务状态回写到本计划。
 

@@ -5,3 +5,4 @@
 - [rc004] (52f125a6) : 2026.04.27 完成 docs/exec-plans/active/cli/rc004-add-role-option.md 对应开发，为 add 命令增加 --role 参数，默认 Human，支持 Agent、Human、agent、human、a、h 输入并归一化写入，输出 metadata.role，并补充 CLI 回归测试。
 - [rc006] (1082cf41) : 2026.04.27 完成 docs/exec-plans/completed/cli/rc006-init-command.md 对应开发，新增 init 命令自动创建数据库、初始化 schema 并写入配置；同时将顶层 db.py 迁移为 database 子包，统一导入边界，已通过验收可正常新增笔记。
 - [bfx001] (a65c4611) : 2026.04.27 完成 docs/bugfix/bfx001-unicode-backspace.md 对应 bugfix，将 zembra-cli run 的生产输入从内置 input 切换为 prompt_toolkit.prompt，保留 input_func 测试注入口并更新依赖锁文件，已通过 ruff、pytest 和用户中文退格验收。
+- [rc008] (06e862ea) : 2026.05.03 完成 docs/exec-plans/completed/cli/rc008-slash-command-help.md 对应开发，为 zembra-cli run 增加斜杠命令候选能力，使用 prompt_toolkit completer 在输入以 / 开头时临时展示 /help 与 /exit 说明，避免 Rich 表格刷屏，并通过 ruff、pytest 和用户交互验收。
