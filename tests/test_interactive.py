@@ -3,15 +3,19 @@
 from datetime import datetime
 from pathlib import Path
 
+from prompt_toolkit.buffer import Buffer
 from rich.console import Console
 
 from zembra_cli.interactive import (
     DEFAULT_INTERACTIVE_FIELD,
     InteractiveNoteInput,
+    SlashCommandHelpRenderer,
+    match_slash_commands,
     parse_interactive_note_input,
     read_interactive_line,
     render_help,
     render_intro,
+    render_slash_command_help,
     run_interactive_session,
 )
 
@@ -203,6 +207,96 @@ def test_render_help_includes_commands() -> None:
     assert "/exit" in output
     assert "@dev" in output
     assert "#gpt" in output
+
+
+def test_match_slash_commands_returns_all_commands_for_slash() -> None:
+    """Verify a lone slash shows all existing slash command candidates.
+
+    Args:
+        None.
+
+    Returns:
+        None.
+    """
+    matches = match_slash_commands("/")
+
+    assert [match.command for match in matches] == ["/help", "/exit"]
+
+
+def test_match_slash_commands_filters_by_prefix() -> None:
+    """Verify slash command candidates use prefix matching.
+
+    Args:
+        None.
+
+    Returns:
+        None.
+    """
+    help_matches = match_slash_commands("/h")
+    exit_matches = match_slash_commands("/e")
+
+    assert [match.command for match in help_matches] == ["/help"]
+    assert [match.command for match in exit_matches] == ["/exit"]
+
+
+def test_match_slash_commands_ignores_non_prefix_slashes() -> None:
+    """Verify slashes inside normal note content do not trigger candidates.
+
+    Args:
+        None.
+
+    Returns:
+        None.
+    """
+    assert match_slash_commands("note / text") == []
+    assert match_slash_commands("/unknown") == []
+
+
+def test_render_slash_command_help_filters_candidates() -> None:
+    """Verify candidate help output includes only supplied matches.
+
+    Args:
+        None.
+
+    Returns:
+        None.
+    """
+    console = record_console()
+
+    render_slash_command_help(console, match_slash_commands("/h"))
+
+    output = console.export_text()
+    assert "Slash Commands" in output
+    assert "/help" in output
+    assert "Show this help" in output
+    assert "/exit" not in output
+
+
+def test_slash_command_help_renderer_renders_only_when_state_changes() -> None:
+    """Verify prompt text changes render slash help without duplicate output.
+
+    Args:
+        None.
+
+    Returns:
+        None.
+    """
+    console = record_console()
+    renderer = SlashCommandHelpRenderer(console)
+    buffer = Buffer()
+
+    buffer.text = "/"
+    renderer.handle_text_changed(buffer)
+    renderer.handle_text_changed(buffer)
+    buffer.text = "/h"
+    renderer.handle_text_changed(buffer)
+    buffer.text = "note / text"
+    renderer.handle_text_changed(buffer)
+
+    output = console.export_text()
+    assert output.count("Slash Commands") == 2
+    assert output.count("/help") == 2
+    assert output.count("/exit") == 1
 
 
 def test_run_interactive_session_saves_note_and_exits() -> None:
