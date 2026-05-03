@@ -4,7 +4,7 @@ import json
 import tomllib
 from dataclasses import dataclass
 from pathlib import Path
-from typing import Any
+from typing import Any, Literal
 
 
 class ConfigError(RuntimeError):
@@ -72,6 +72,61 @@ class ConfigDatabasePathMissingError(ConfigError):
         )
 
 
+class ConfigCliModeMissingError(ConfigError):
+    """Signal that the zembra configuration does not define cli.mode."""
+
+    def __init__(self) -> None:
+        """Initialize the missing CLI mode error.
+
+        Args:
+            None.
+
+        Returns:
+            None.
+        """
+        super().__init__(
+            'CLI mode is missing in the zembra config. Set [cli].mode to "direct" or "http".'
+        )
+
+
+class ConfigCliModeInvalidError(ConfigError):
+    """Signal that cli.mode is not a supported value.
+
+    Attributes:
+        mode: Unsupported mode value decoded from config.
+    """
+
+    def __init__(self, mode: object) -> None:
+        """Initialize the invalid CLI mode error.
+
+        Args:
+            mode: Unsupported mode value decoded from config.
+
+        Returns:
+            None.
+        """
+        self.mode = mode
+        super().__init__('CLI mode must be "direct" or "http".')
+
+
+class ConfigHttpBaseUrlMissingError(ConfigError):
+    """Signal that HTTP mode does not define cli.http_base_url."""
+
+    def __init__(self) -> None:
+        """Initialize the missing HTTP base URL error.
+
+        Args:
+            None.
+
+        Returns:
+            None.
+        """
+        super().__init__(
+            "HTTP backend URL is missing in the zembra config. "
+            'Set [cli].http_base_url when [cli].mode is "http".'
+        )
+
+
 class ConfigParentMissingError(ConfigError):
     """Signal that the configuration file parent directory is absent."""
 
@@ -81,10 +136,14 @@ class ZembraConfig:
     """Represent loaded zembra system configuration.
 
     Attributes:
-        database_path: SQLite database path configured for zembra.
+        cli_mode: CLI connection mode.
+        database_path: SQLite database path configured for direct mode.
+        http_base_url: Backend base URL configured for HTTP mode.
     """
 
-    database_path: Path
+    cli_mode: Literal["direct", "http"]
+    database_path: Path | None = None
+    http_base_url: str | None = None
 
 
 def default_config_path() -> Path:
@@ -123,15 +182,17 @@ def load_config(config_path: str | Path | None = None) -> ZembraConfig:
 def write_database_path(
     database_path: str | Path,
     config_path: str | Path | None = None,
+    set_direct_mode: bool = False,
 ) -> ZembraConfig:
     """Write the configured zembra database path to a TOML file.
 
     Args:
         database_path: SQLite database path to store.
         config_path: Optional TOML configuration path.
+        set_direct_mode: Whether to explicitly set ``[cli].mode`` to ``direct``.
 
     Returns:
-        The validated zembra configuration after writing.
+        A direct-mode config object containing the written database path.
     """
     path = _resolve_config_path(config_path)
     if not path.parent.exists():
@@ -150,10 +211,18 @@ def write_database_path(
     if not isinstance(database_section, dict):
         database_section = {}
         data["database"] = database_section
-    database_section["path"] = str(Path(database_path).expanduser())
+
+    resolved_database_path = Path(database_path).expanduser()
+    database_section["path"] = str(resolved_database_path)
+    if set_direct_mode:
+        cli_section = data.get("cli")
+        if not isinstance(cli_section, dict):
+            cli_section = {}
+            data["cli"] = cli_section
+        cli_section["mode"] = "direct"
 
     path.write_text(_dump_toml(data), encoding="utf-8")
-    return _config_from_data(data)
+    return ZembraConfig(cli_mode="direct", database_path=resolved_database_path)
 
 
 def _resolve_config_path(config_path: str | Path | None) -> Path:
@@ -177,6 +246,22 @@ def _config_from_data(data: dict[str, Any]) -> ZembraConfig:
     Returns:
         The validated zembra configuration.
     """
+    cli_section = data.get("cli")
+    if not isinstance(cli_section, dict):
+        raise ConfigCliModeMissingError()
+
+    raw_cli_mode = cli_section.get("mode")
+    if raw_cli_mode is None:
+        raise ConfigCliModeMissingError()
+    if raw_cli_mode not in {"direct", "http"}:
+        raise ConfigCliModeInvalidError(raw_cli_mode)
+
+    if raw_cli_mode == "http":
+        raw_http_base_url = cli_section.get("http_base_url")
+        if not isinstance(raw_http_base_url, str) or not raw_http_base_url.strip():
+            raise ConfigHttpBaseUrlMissingError()
+        return ZembraConfig(cli_mode="http", http_base_url=raw_http_base_url.strip())
+
     database_section = data.get("database")
     if not isinstance(database_section, dict):
         raise ConfigDatabasePathMissingError()
@@ -185,7 +270,7 @@ def _config_from_data(data: dict[str, Any]) -> ZembraConfig:
     if not isinstance(raw_database_path, str) or not raw_database_path.strip():
         raise ConfigDatabasePathMissingError()
 
-    return ZembraConfig(database_path=Path(raw_database_path).expanduser())
+    return ZembraConfig(cli_mode="direct", database_path=Path(raw_database_path).expanduser())
 
 
 def _dump_toml(data: dict[str, Any]) -> str:

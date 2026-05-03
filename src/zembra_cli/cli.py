@@ -2,6 +2,8 @@
 
 import json
 import sqlite3
+from collections.abc import Iterator
+from contextlib import contextmanager
 from pathlib import Path
 from typing import Annotated, Literal
 
@@ -17,9 +19,11 @@ from zembra_cli.database import (
     initialize_database_file,
     missing_core_tables,
 )
+from zembra_cli.http_client import HttpZembraRepository, ZembraHttpClientError
 from zembra_cli.interactive import render_intro_for_repository, run_interactive_session
 from zembra_cli.repository import (
     AmbiguousNoteReferenceError,
+    CliRepository,
     InvalidNoteReferenceError,
     NoteReferenceTooShortError,
     RecordNotFoundError,
@@ -207,6 +211,43 @@ def require_initialized_database(database_path) -> None:
         fail_command(f"Database is not initialized at {database_path}")
 
 
+@contextmanager
+def open_cli_repository() -> Iterator[tuple[CliRepository, str]]:
+    """Open the repository configured for CLI database commands.
+
+    Args:
+        None.
+
+    Returns:
+        A context manager yielding the repository and a human-readable location.
+    """
+    try:
+        config = load_config(default_config_path())
+    except ConfigError as error:
+        fail_command(error.message)
+
+    if config.cli_mode == "http":
+        if config.http_base_url is None:
+            fail_command("HTTP backend URL is missing in the zembra config.")
+        repository = HttpZembraRepository(config.http_base_url)
+        try:
+            yield repository, config.http_base_url
+        finally:
+            repository.close()
+        return
+
+    if config.database_path is None:
+        fail_command("Database path is missing in the zembra config.")
+    database_path = config.database_path.expanduser()
+    require_initialized_database(database_path)
+
+    try:
+        with database_connection(database_path) as connection:
+            yield ZembraRepository(connection), str(database_path)
+    except sqlite3.Error as error:
+        fail_command(f"Could not open the Zembra database: {error}")
+
+
 def version_callback(value: bool) -> None:
     """Print the application version and exit when requested.
 
@@ -284,7 +325,11 @@ def init(
 
     try:
         database_result = initialize_database_file(resolved_database_path)
-        config = write_database_path(database_result.database_path, config_path)
+        config = write_database_path(
+            database_result.database_path,
+            config_path,
+            set_direct_mode=True,
+        )
     except DatabaseInitializationError as error:
         fail_command(error.message)
     except ConfigError as error:
@@ -343,17 +388,10 @@ def list_tags(
         None. The command prints compact tag names or exits on failure.
     """
     try:
-        config = load_config(default_config_path())
-    except ConfigError as error:
-        fail_command(error.message)
-
-    database_path = config.database_path.expanduser()
-    require_initialized_database(database_path)
-
-    try:
-        with database_connection(database_path) as connection:
-            repository = ZembraRepository(connection)
+        with open_cli_repository() as (repository, _location):
             names = [tag.name for tag in repository.list_tags()]
+    except ZembraHttpClientError as error:
+        fail_command(error.message)
     except sqlite3.Error as error:
         fail_command(f"Could not list tags: {error}")
 
@@ -382,17 +420,10 @@ def list_fields(
         None. The command prints compact field names or exits on failure.
     """
     try:
-        config = load_config(default_config_path())
-    except ConfigError as error:
-        fail_command(error.message)
-
-    database_path = config.database_path.expanduser()
-    require_initialized_database(database_path)
-
-    try:
-        with database_connection(database_path) as connection:
-            repository = ZembraRepository(connection)
+        with open_cli_repository() as (repository, _location):
             names = [field.name for field in repository.list_fields()]
+    except ZembraHttpClientError as error:
+        fail_command(error.message)
     except sqlite3.Error as error:
         fail_command(f"Could not list fields: {error}")
 
@@ -433,22 +464,15 @@ def add(
     parsed_tags = parse_tag_values(tags)
     parsed_role = parse_role_value(role)
     try:
-        config = load_config(default_config_path())
-    except ConfigError as error:
-        fail_command(error.message)
-
-    database_path = config.database_path.expanduser()
-    require_initialized_database(database_path)
-
-    try:
-        with database_connection(database_path) as connection:
-            repository = ZembraRepository(connection)
+        with open_cli_repository() as (repository, _location):
             note = repository.create_note(
                 note_string_content,
                 role=parsed_role,
                 field_name=field,
                 tag_names=parsed_tags,
             )
+    except ZembraHttpClientError as error:
+        fail_command(error.message)
     except sqlite3.Error as error:
         fail_command(f"Could not create the note: {error}")
 
@@ -474,17 +498,10 @@ def run() -> None:
         None. The command exits when the user enters /exit or sends EOF.
     """
     try:
-        config = load_config(default_config_path())
-    except ConfigError as error:
-        fail_command(error.message)
-
-    database_path = config.database_path.expanduser()
-    require_initialized_database(database_path)
-
-    try:
-        with database_connection(database_path) as connection:
-            repository = ZembraRepository(connection)
-            render_intro_for_repository(repository, console, database_path)
+        with open_cli_repository() as (repository, location):
+            render_intro_for_repository(repository, console, location)
             run_interactive_session(repository, console)
+    except ZembraHttpClientError as error:
+        fail_command(error.message)
     except sqlite3.Error as error:
         fail_command(f"Could not open the Zembra database: {error}")

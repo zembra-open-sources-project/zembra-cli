@@ -12,7 +12,7 @@ from zembra_cli import __version__, cli
 from zembra_cli.cli import app
 from zembra_cli.config import load_config
 from zembra_cli.database import database_connection, initialize_database, missing_core_tables
-from zembra_cli.models import NoteRecord
+from zembra_cli.models import FieldRecord, NoteRecord, TagRecord
 from zembra_cli.repository import (
     AmbiguousNoteReferenceError,
     InvalidNoteReferenceError,
@@ -36,7 +36,10 @@ def configure_cli_database(monkeypatch, tmp_path, database_path) -> Path:
         The temporary config path.
     """
     config_path = tmp_path / ".zembra.env"
-    config_path.write_text(f'[database]\npath = "{database_path}"\n', encoding="utf-8")
+    config_path.write_text(
+        f'[cli]\nmode = "direct"\n\n[database]\npath = "{database_path}"\n',
+        encoding="utf-8",
+    )
     monkeypatch.setattr(cli, "default_config_path", lambda: config_path)
     return config_path
 
@@ -124,6 +127,107 @@ def make_note(note_id: str, content: str) -> NoteRecord:
         created_at=1,
         updated_at=1,
     )
+
+
+class FakeHttpRepository:
+    """Fake HTTP repository used by CLI mode-switching tests.
+
+    Attributes:
+        base_url: Backend URL passed by the CLI.
+        created_payloads: Captured create_note calls.
+    """
+
+    instances: list["FakeHttpRepository"] = []
+
+    def __init__(self, base_url: str) -> None:
+        """Initialize the fake repository.
+
+        Args:
+            base_url: Backend URL passed by the CLI.
+
+        Returns:
+            None.
+        """
+        self.base_url = base_url
+        self.created_payloads: list[dict] = []
+        FakeHttpRepository.instances.append(self)
+
+    def close(self) -> None:
+        """Close the fake repository.
+
+        Args:
+            None.
+
+        Returns:
+            None.
+        """
+
+    def create_note(
+        self,
+        content: str,
+        role: str = "Human",
+        field_name: str | None = None,
+        tag_names: list[str] | None = None,
+        device_id: str | None = None,
+    ) -> NoteRecord:
+        """Capture note creation and return a valid note.
+
+        Args:
+            content: Note body text.
+            role: Note creation role.
+            field_name: Optional field name.
+            tag_names: Optional tag names.
+            device_id: Optional device identifier.
+
+        Returns:
+            Created note record.
+        """
+        self.created_payloads.append(
+            {
+                "content": content,
+                "role": role,
+                "field_name": field_name,
+                "tag_names": list(tag_names or []),
+                "device_id": device_id,
+            }
+        )
+        return make_note("abcd0000000000000000000000000000", content)
+
+    def list_tags(self) -> list[TagRecord]:
+        """Return fake tag records.
+
+        Args:
+            None.
+
+        Returns:
+            Fake tag records.
+        """
+        return [
+            TagRecord(id="tag-1", name="alpha", created_at=1),
+            TagRecord(id="tag-2", name="beta", created_at=1),
+        ]
+
+    def list_fields(self) -> list[FieldRecord]:
+        """Return fake field records.
+
+        Args:
+            None.
+
+        Returns:
+            Fake field records.
+        """
+        return [FieldRecord(id="field-1", name="work", created_at=1)]
+
+    def list_notes(self, include_deleted: bool = False) -> list[NoteRecord]:
+        """Return fake notes.
+
+        Args:
+            include_deleted: Whether deleted notes are requested.
+
+        Returns:
+            Fake note records.
+        """
+        return [make_note("abcd0000000000000000000000000000", "saved")]
 
 
 def test_version_flag_prints_package_version() -> None:
@@ -446,6 +550,93 @@ def test_list_tags_rejects_invalid_number(tmp_path, monkeypatch) -> None:
     assert "Number must be greater than or equal to 1." in result.stderr
 
 
+def test_add_command_uses_http_mode_from_cli_config(tmp_path, monkeypatch) -> None:
+    """Verify add uses HTTP mode when configured in the cli section.
+
+    Args:
+        tmp_path: Pytest temporary directory fixture.
+        monkeypatch: Pytest monkeypatch fixture.
+
+    Returns:
+        None.
+    """
+    FakeHttpRepository.instances = []
+    config_path = tmp_path / ".zembra.env"
+    config_path.write_text(
+        '[cli]\nmode = "http"\nhttp_base_url = "http://backend.test"\n',
+        encoding="utf-8",
+    )
+    monkeypatch.setattr(cli, "default_config_path", lambda: config_path)
+    monkeypatch.setattr(cli, "HttpZembraRepository", FakeHttpRepository)
+
+    result = runner.invoke(
+        app,
+        ["add", "hello http", "--field", "work", "--tags", "alpha,beta", "--role", "Agent"],
+    )
+
+    assert result.exit_code == 0
+    payload = json.loads(result.stdout)
+    assert payload["note"]["content"] == "hello http"
+    assert payload["metadata"] == {"field": "work", "tags": ["alpha", "beta"], "role": "Agent"}
+    assert FakeHttpRepository.instances[0].base_url == "http://backend.test"
+    assert FakeHttpRepository.instances[0].created_payloads == [
+        {
+            "content": "hello http",
+            "role": "Agent",
+            "field_name": "work",
+            "tag_names": ["alpha", "beta"],
+            "device_id": None,
+        }
+    ]
+
+
+def test_list_tags_uses_http_mode_from_cli_config(tmp_path, monkeypatch) -> None:
+    """Verify list tags uses HTTP mode when configured in the cli section.
+
+    Args:
+        tmp_path: Pytest temporary directory fixture.
+        monkeypatch: Pytest monkeypatch fixture.
+
+    Returns:
+        None.
+    """
+    FakeHttpRepository.instances = []
+    config_path = tmp_path / ".zembra.env"
+    config_path.write_text(
+        '[cli]\nmode = "http"\nhttp_base_url = "http://backend.test"\n',
+        encoding="utf-8",
+    )
+    monkeypatch.setattr(cli, "default_config_path", lambda: config_path)
+    monkeypatch.setattr(cli, "HttpZembraRepository", FakeHttpRepository)
+
+    result = runner.invoke(app, ["list", "tags"])
+
+    assert result.exit_code == 0
+    assert result.stdout == "alpha  beta\n"
+    assert FakeHttpRepository.instances[0].base_url == "http://backend.test"
+
+
+def test_add_command_rejects_config_without_cli_mode(tmp_path, monkeypatch) -> None:
+    """Verify database.path alone does not imply direct mode.
+
+    Args:
+        tmp_path: Pytest temporary directory fixture.
+        monkeypatch: Pytest monkeypatch fixture.
+
+    Returns:
+        None.
+    """
+    config_path = tmp_path / ".zembra.env"
+    database_path = tmp_path / "zembra.sqlite3"
+    config_path.write_text(f'[database]\npath = "{database_path}"\n', encoding="utf-8")
+    monkeypatch.setattr(cli, "default_config_path", lambda: config_path)
+
+    result = runner.invoke(app, ["add", "hello", "--field", "work"])
+
+    assert result.exit_code == 1
+    assert "CLI mode is missing" in result.stderr
+
+
 def test_config_database_command_writes_config(tmp_path, monkeypatch) -> None:
     """Verify config database writes the shared zembra config.
 
@@ -464,7 +655,9 @@ def test_config_database_command_writes_config(tmp_path, monkeypatch) -> None:
 
     assert result.exit_code == 0
     assert f"Configured zembra database path: {database_path}" in result.stdout
-    assert load_config(config_path).database_path == database_path
+    config_text = config_path.read_text(encoding="utf-8")
+    assert f'path = "{database_path}"' in config_text
+    assert "[cli]" not in config_text
 
 
 def test_config_database_command_preserves_existing_fields(tmp_path, monkeypatch) -> None:
@@ -480,7 +673,7 @@ def test_config_database_command_preserves_existing_fields(tmp_path, monkeypatch
     config_path = tmp_path / ".zembra.env"
     database_path = tmp_path / "zembra.sqlite3"
     config_path.write_text(
-        'theme = "light"\n\n[database]\npath = "old.sqlite3"\n',
+        'theme = "light"\n\n[cli]\nmode = "direct"\n\n[database]\npath = "old.sqlite3"\n',
         encoding="utf-8",
     )
     monkeypatch.setattr(cli, "default_config_path", lambda: config_path)
@@ -490,6 +683,7 @@ def test_config_database_command_preserves_existing_fields(tmp_path, monkeypatch
     assert result.exit_code == 0
     config_text = config_path.read_text(encoding="utf-8")
     assert 'theme = "light"' in config_text
+    assert 'mode = "direct"' in config_text
     assert f'path = "{database_path}"' in config_text
 
 
@@ -514,7 +708,9 @@ def test_init_command_creates_default_database_and_config(tmp_path, monkeypatch)
     assert "Initialized zembra." in result.stdout
     assert f"Database: {database_path} (created)" in result.stdout
     assert f"Config: {config_path} (created)" in result.stdout
-    assert load_config(config_path).database_path == database_path
+    config = load_config(config_path)
+    assert config.cli_mode == "direct"
+    assert config.database_path == database_path
     with database_connection(database_path) as connection:
         assert missing_core_tables(connection) == set()
 
@@ -543,6 +739,7 @@ def test_init_command_updates_config_and_skips_complete_database(tmp_path, monke
     assert f"Config: {config_path} (updated)" in second_result.stdout
     config_text = config_path.read_text(encoding="utf-8")
     assert 'theme = "light"' in config_text
+    assert 'mode = "direct"' in config_text
     assert f'path = "{database_path}"' in config_text
 
 

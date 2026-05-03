@@ -16,7 +16,8 @@ from rich.panel import Panel
 from rich.table import Table
 from rich.text import Text
 
-from zembra_cli.repository import ZembraRepository
+from zembra_cli.http_client import ZembraHttpClientError
+from zembra_cli.repository import CliRepository
 
 DEFAULT_INTERACTIVE_FIELD = "inbox"
 EXIT_COMMAND = "/exit"
@@ -147,12 +148,12 @@ class SlashCommandCompleter(Completer):
             )
 
 
-def render_intro(console: Console, database_path: Path, note_count: int) -> None:
+def render_intro(console: Console, repository_location: str | Path, note_count: int) -> None:
     """Render the interactive startup screen.
 
     Args:
         console: Rich console used for terminal output.
-        database_path: Configured SQLite database path.
+        repository_location: Configured repository location.
         note_count: Number of active notes in the database.
 
     Returns:
@@ -175,7 +176,12 @@ def render_intro(console: Console, database_path: Path, note_count: int) -> None
     stats_table = Table.grid(padding=(0, 2))
     stats_table.add_column(style="bold white")
     stats_table.add_column(style="green")
-    stats_table.add_row("Database", str(database_path.expanduser()))
+    location = (
+        str(repository_location.expanduser())
+        if isinstance(repository_location, Path)
+        else repository_location
+    )
+    stats_table.add_row("Database", location)
     stats_table.add_row("Notes", str(note_count))
     stats_table.add_row("Default field", DEFAULT_INTERACTIVE_FIELD)
 
@@ -231,7 +237,7 @@ def read_interactive_line(prompt_text: str) -> str:
 
 
 def run_interactive_session(
-    repository: ZembraRepository,
+    repository: CliRepository,
     console: Console,
     input_func: Callable[[str], str] = read_interactive_line,
     now_func: Callable[[], datetime] = datetime.now,
@@ -282,7 +288,7 @@ def run_interactive_session(
                 field_name=parsed_input.field,
                 tag_names=parsed_input.tags,
             )
-        except sqlite3.Error as error:
+        except (sqlite3.Error, ZembraHttpClientError) as error:
             console.print(f"[red]Could not create the note: {error}[/red]")
             continue
 
@@ -291,18 +297,18 @@ def run_interactive_session(
 
 
 def render_intro_for_repository(
-    repository: ZembraRepository,
+    repository: CliRepository,
     console: Console,
-    database_path: Path,
+    repository_location: str | Path,
 ) -> None:
     """Render startup intro using repository-backed statistics.
 
     Args:
         repository: Repository used to read note statistics.
         console: Rich console used for terminal output.
-        database_path: Configured SQLite database path.
+        repository_location: Configured repository location.
 
     Returns:
         None.
     """
-    render_intro(console, database_path, len(repository.list_notes()))
+    render_intro(console, repository_location, len(repository.list_notes()))

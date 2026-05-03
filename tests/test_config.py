@@ -5,8 +5,11 @@ from pathlib import Path
 import pytest
 
 from zembra_cli.config import (
+    ConfigCliModeInvalidError,
+    ConfigCliModeMissingError,
     ConfigDatabasePathMissingError,
     ConfigFileMissingError,
+    ConfigHttpBaseUrlMissingError,
     ConfigParentMissingError,
     ConfigParseError,
     ZembraConfig,
@@ -42,11 +45,34 @@ def test_load_config_reads_database_path(tmp_path) -> None:
     """
     config_path = tmp_path / ".zembra.env"
     database_path = tmp_path / "zembra.sqlite3"
-    config_path.write_text(f'[database]\npath = "{database_path}"\n', encoding="utf-8")
+    config_path.write_text(
+        f'[cli]\nmode = "direct"\n\n[database]\npath = "{database_path}"\n',
+        encoding="utf-8",
+    )
 
     config = load_config(config_path)
 
-    assert config == ZembraConfig(database_path=database_path)
+    assert config == ZembraConfig(cli_mode="direct", database_path=database_path)
+
+
+def test_load_config_reads_http_mode(tmp_path) -> None:
+    """Verify HTTP mode loads the configured backend URL.
+
+    Args:
+        tmp_path: Pytest temporary directory fixture.
+
+    Returns:
+        None.
+    """
+    config_path = tmp_path / ".zembra.env"
+    config_path.write_text(
+        '[cli]\nmode = "http"\nhttp_base_url = "http://127.0.0.1:3000"\n',
+        encoding="utf-8",
+    )
+
+    config = load_config(config_path)
+
+    assert config == ZembraConfig(cli_mode="http", http_base_url="http://127.0.0.1:3000")
 
 
 def test_load_config_reports_missing_file(tmp_path) -> None:
@@ -80,8 +106,8 @@ def test_load_config_reports_invalid_toml(tmp_path) -> None:
         load_config(config_path)
 
 
-def test_load_config_reports_missing_database_path(tmp_path) -> None:
-    """Verify configs without database.path are rejected.
+def test_load_config_reports_missing_cli_mode(tmp_path) -> None:
+    """Verify configs without cli.mode are rejected.
 
     Args:
         tmp_path: Pytest temporary directory fixture.
@@ -90,7 +116,55 @@ def test_load_config_reports_missing_database_path(tmp_path) -> None:
         None.
     """
     config_path = tmp_path / ".zembra.env"
-    config_path.write_text("[database]\n", encoding="utf-8")
+    config_path.write_text('[database]\npath = "zembra.sqlite3"\n', encoding="utf-8")
+
+    with pytest.raises(ConfigCliModeMissingError, match="CLI mode is missing"):
+        load_config(config_path)
+
+
+def test_load_config_reports_invalid_cli_mode(tmp_path) -> None:
+    """Verify unsupported cli.mode values are rejected.
+
+    Args:
+        tmp_path: Pytest temporary directory fixture.
+
+    Returns:
+        None.
+    """
+    config_path = tmp_path / ".zembra.env"
+    config_path.write_text('[cli]\nmode = "sqlite"\n', encoding="utf-8")
+
+    with pytest.raises(ConfigCliModeInvalidError, match="direct"):
+        load_config(config_path)
+
+
+def test_load_config_reports_missing_http_base_url(tmp_path) -> None:
+    """Verify HTTP mode requires cli.http_base_url.
+
+    Args:
+        tmp_path: Pytest temporary directory fixture.
+
+    Returns:
+        None.
+    """
+    config_path = tmp_path / ".zembra.env"
+    config_path.write_text('[cli]\nmode = "http"\n', encoding="utf-8")
+
+    with pytest.raises(ConfigHttpBaseUrlMissingError, match="HTTP backend URL is missing"):
+        load_config(config_path)
+
+
+def test_load_config_reports_missing_direct_database_path(tmp_path) -> None:
+    """Verify direct mode requires database.path.
+
+    Args:
+        tmp_path: Pytest temporary directory fixture.
+
+    Returns:
+        None.
+    """
+    config_path = tmp_path / ".zembra.env"
+    config_path.write_text('[cli]\nmode = "direct"\n', encoding="utf-8")
 
     with pytest.raises(ConfigDatabasePathMissingError, match="Database path is missing"):
         load_config(config_path)
@@ -111,7 +185,6 @@ def test_write_database_path_creates_config(tmp_path) -> None:
     config = write_database_path(database_path, config_path)
 
     assert config.database_path == database_path
-    assert load_config(config_path).database_path == database_path
     assert config_path.read_text(encoding="utf-8") == (
         "[database]\n"
         f'path = "{database_path}"\n'
@@ -151,6 +224,24 @@ def test_write_database_path_updates_config_and_preserves_fields(tmp_path) -> No
     assert 'theme = "light"' in config_text
     assert 'mode = "local"' in config_text
     assert f'path = "{new_database_path}"' in config_text
+
+
+def test_write_database_path_can_set_direct_mode(tmp_path) -> None:
+    """Verify callers can explicitly write CLI direct mode.
+
+    Args:
+        tmp_path: Pytest temporary directory fixture.
+
+    Returns:
+        None.
+    """
+    config_path = tmp_path / ".zembra.env"
+    database_path = tmp_path / "zembra.sqlite3"
+
+    write_database_path(database_path, config_path, set_direct_mode=True)
+
+    config = load_config(config_path)
+    assert config == ZembraConfig(cli_mode="direct", database_path=database_path)
 
 
 def test_write_database_path_reports_missing_parent(tmp_path) -> None:
