@@ -145,6 +145,7 @@ class FakeHttpRepository:
     """
 
     instances: list["FakeHttpRepository"] = []
+    random_note_requests: list[int] = []
 
     def __init__(self, base_url: str) -> None:
         """Initialize the fake repository.
@@ -245,6 +246,7 @@ class FakeHttpRepository:
         Returns:
             Fake random notes with metadata.
         """
+        FakeHttpRepository.random_note_requests.append(number)
         note = make_note("abcd0000000000000000000000000000", "full http content")
         field = FieldRecord(id="field-1", name="work", created_at=1)
         tag = TagRecord(id="tag-1", name="cli", created_at=1)
@@ -639,7 +641,7 @@ def test_random_notes_human_output_preserves_complete_direct_content(
     database_path = tmp_path / "zembra.sqlite3"
     initialize_cli_database(database_path)
     configure_cli_database(monkeypatch, tmp_path, database_path)
-    content = "first line\nsecond line without truncation"
+    content = "# Title\n\n- first item\n- second item without truncation"
     with database_connection(database_path) as connection:
         repository = ZembraRepository(connection)
         repository.create_note(content, field_name="work", tag_names=["cli"])
@@ -649,7 +651,9 @@ def test_random_notes_human_output_preserves_complete_direct_content(
     assert result.exit_code == 0
     assert "Field: work" in result.stdout
     assert "Tags: cli" in result.stdout
-    assert content in result.stdout
+    assert "Title" in result.stdout
+    assert "first item" in result.stdout
+    assert "second item without truncation" in result.stdout
 
 
 def test_random_tags_and_fields_json_output_direct_groups(tmp_path, monkeypatch) -> None:
@@ -733,6 +737,7 @@ def test_random_notes_uses_http_mode_from_cli_config(tmp_path, monkeypatch) -> N
         None.
     """
     FakeHttpRepository.instances = []
+    FakeHttpRepository.random_note_requests = []
     config_path = tmp_path / ".zembra.env"
     config_path.write_text(
         '[cli]\nmode = "http"\nhttp_base_url = "http://backend.test"\n',
@@ -748,6 +753,59 @@ def test_random_notes_uses_http_mode_from_cli_config(tmp_path, monkeypatch) -> N
     assert payload["notes"][0]["note"]["content"] == "full http content"
     assert payload["notes"][0]["field"]["name"] == "work"
     assert payload["notes"][0]["tags"][0]["name"] == "cli"
+    assert FakeHttpRepository.random_note_requests == [3]
+
+
+def test_random_notes_uses_json_default_count_for_http_mode(tmp_path, monkeypatch) -> None:
+    """Verify random notes defaults to 20 records for JSON output.
+
+    Args:
+        tmp_path: Pytest temporary directory fixture.
+        monkeypatch: Pytest monkeypatch fixture.
+
+    Returns:
+        None.
+    """
+    FakeHttpRepository.instances = []
+    FakeHttpRepository.random_note_requests = []
+    config_path = tmp_path / ".zembra.env"
+    config_path.write_text(
+        '[cli]\nmode = "http"\nhttp_base_url = "http://backend.test"\n',
+        encoding="utf-8",
+    )
+    monkeypatch.setattr(cli, "default_config_path", lambda: config_path)
+    monkeypatch.setattr(cli, "HttpZembraRepository", FakeHttpRepository)
+
+    result = runner.invoke(app, ["random", "notes", "--json"])
+
+    assert result.exit_code == 0
+    assert FakeHttpRepository.random_note_requests == [20]
+
+
+def test_random_notes_uses_human_default_count_for_http_mode(tmp_path, monkeypatch) -> None:
+    """Verify random notes defaults to 3 records for human output.
+
+    Args:
+        tmp_path: Pytest temporary directory fixture.
+        monkeypatch: Pytest monkeypatch fixture.
+
+    Returns:
+        None.
+    """
+    FakeHttpRepository.instances = []
+    FakeHttpRepository.random_note_requests = []
+    config_path = tmp_path / ".zembra.env"
+    config_path.write_text(
+        '[cli]\nmode = "http"\nhttp_base_url = "http://backend.test"\n',
+        encoding="utf-8",
+    )
+    monkeypatch.setattr(cli, "default_config_path", lambda: config_path)
+    monkeypatch.setattr(cli, "HttpZembraRepository", FakeHttpRepository)
+
+    result = runner.invoke(app, ["random", "notes"])
+
+    assert result.exit_code == 0
+    assert FakeHttpRepository.random_note_requests == [3]
 
 
 def test_add_command_uses_http_mode_from_cli_config(tmp_path, monkeypatch) -> None:

@@ -87,7 +87,7 @@
 - 验证：`tests/test_cli.py`
 
 - 功能：新增 `zembra-cli random notes`、`zembra-cli random tags`、`zembra-cli random fields`。
-- 实现说明：新增 `random_app` 并挂载到主 app。`notes` 支持 `-n/--number` 默认 3 和 `--json`；`tags`、`fields` 支持 `-n/--number` 默认 2、`--count` 默认 5 和 `--json`。CLI 层校验参数大于等于 1。人类可读输出展示完整 note id、role、field、tags、created_at、updated_at、完整 content；JSON 输出使用 `ensure_ascii=False`，字段名对齐 `notes`、`tagged_notes`、`field_notes`。
+- 实现说明：新增 `random_app` 并挂载到主 app。`notes` 支持 `-n/--number` 和 `--json`，未显式传入 `-n` 时非 JSON 默认 3 条、JSON 默认 20 条；`tags`、`fields` 支持 `-n/--number` 默认 2、`--count` 默认 5 和 `--json`。CLI 层校验参数大于等于 1。人类可读输出展示完整 note id、role、field、tags、created_at、updated_at，并使用 Rich Markdown 渲染完整 content；JSON 输出使用 `ensure_ascii=False`，字段名对齐 `notes`、`tagged_notes`、`field_notes`。
 - 预期验证结果：direct 和 HTTP 模式都能执行 random 命令；默认输出不截断 content；`--json` 输出可解析 JSON 且不混入 Rich 样式文本；参数错误返回非 0。
 - 完成时间：2026.05.16
 
@@ -142,3 +142,5 @@
 2026.05.16：已运行 `uv run pytest -q`，120 个测试通过。
 
 2026.05.16：已运行 `uv run ruff check .`，检查通过。
+
+2026.05.16：根据补充要求，将 `random notes` 的未传 `-n` 默认值调整为非 JSON 3 条、JSON 20 条，并将人类可读 content 输出改为 Rich Markdown 渲染。

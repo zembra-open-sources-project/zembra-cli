@@ -9,6 +9,7 @@ from typing import Annotated, Literal
 
 import typer
 from rich.console import Console
+from rich.markdown import Markdown
 
 from zembra_cli import __version__
 from zembra_cli.config import ConfigError, default_config_path, load_config, write_database_path
@@ -30,6 +31,11 @@ from zembra_cli.repository import (
     RecordNotFoundError,
     ZembraRepository,
 )
+
+DEFAULT_RANDOM_NOTES_TEXT_COUNT = 3
+DEFAULT_RANDOM_NOTES_JSON_COUNT = 20
+DEFAULT_RANDOM_GROUP_COUNT = 2
+DEFAULT_RANDOM_GROUP_NOTE_COUNT = 5
 
 app = typer.Typer(
     name="zembra-cli",
@@ -180,6 +186,23 @@ def require_positive_number(value: int, name: str) -> None:
         fail_command(f"{name} must be greater than or equal to 1.")
 
 
+def resolve_random_number(number: int | None, json_output: bool) -> int:
+    """Resolve random notes count from explicit input and output mode.
+
+    Args:
+        number: Optional user-provided random notes count.
+        json_output: Whether JSON output is requested.
+
+    Returns:
+        Explicit count, or the mode-specific default.
+    """
+    if number is not None:
+        return number
+    if json_output:
+        return DEFAULT_RANDOM_NOTES_JSON_COUNT
+    return DEFAULT_RANDOM_NOTES_TEXT_COUNT
+
+
 def note_with_metadata_to_dict(item: NoteWithMetadata) -> dict:
     """Convert a note with metadata to a JSON-compatible dictionary.
 
@@ -216,14 +239,14 @@ def field_notes_group_to_dict(group: FieldNotesGroup) -> dict:
     return group.model_dump()
 
 
-def format_note_with_metadata(item: NoteWithMetadata) -> str:
+def format_note_metadata(item: NoteWithMetadata) -> str:
     """Format a note with metadata as human-readable text.
 
     Args:
         item: Note and metadata object returned by a repository.
 
     Returns:
-        Multi-line text that preserves complete note content.
+        Multi-line metadata text for terminal display.
     """
     field_name = item.field.name if item.field is not None else "null"
     tag_names = ", ".join(tag.name for tag in item.tags) if item.tags else "[]"
@@ -234,59 +257,59 @@ def format_note_with_metadata(item: NoteWithMetadata) -> str:
             f"Tags: {tag_names}",
             f"Created: {item.note.created_at}",
             f"Updated: {item.note.updated_at}",
-            "Content:",
-            item.note.content,
         ]
     )
 
 
-def render_random_notes(notes: list[NoteWithMetadata]) -> str:
-    """Render random notes as human-readable text.
+def print_random_notes(notes: list[NoteWithMetadata]) -> None:
+    """Print random notes as human-readable Rich output.
 
     Args:
         notes: Random note records with metadata.
 
     Returns:
-        Human-readable output for terminal display.
+        None.
     """
-    return "\n\n".join(format_note_with_metadata(note) for note in notes)
+    for index, note in enumerate(notes):
+        if index > 0:
+            console.print()
+        console.print(format_note_metadata(note))
+        console.print("Content:")
+        console.print(Markdown(note.note.content))
 
 
-def render_random_tagged_notes(groups: list[TaggedNotesGroup]) -> str:
-    """Render random tagged notes as human-readable text.
+def print_random_tagged_notes(groups: list[TaggedNotesGroup]) -> None:
+    """Print random tagged notes as human-readable Rich output.
 
     Args:
         groups: Random tag groups with note metadata.
 
     Returns:
-        Human-readable output for terminal display.
+        None.
     """
-    sections = []
-    for group in groups:
-        notes_output = render_random_notes(group.notes)
-        section = f"# tag: {group.tag.name}"
-        if notes_output:
-            section = f"{section}\n\n{notes_output}"
-        sections.append(section)
-    return "\n\n".join(sections)
+    for index, group in enumerate(groups):
+        if index > 0:
+            console.print()
+        console.print(f"# tag: {group.tag.name}")
+        console.print()
+        print_random_notes(group.notes)
 
 
-def render_random_field_notes(groups: list[FieldNotesGroup]) -> str:
-    """Render random field notes as human-readable text.
+def print_random_field_notes(groups: list[FieldNotesGroup]) -> None:
+    """Print random field notes as human-readable Rich output.
 
     Args:
         groups: Random field groups with note metadata.
 
     Returns:
-        Human-readable output for terminal display.
+        None.
     """
-    sections = []
-    for group in groups:
-        notes_output = render_random_notes(group.notes)
-        sections.append(
-            f"# field: {group.field.name}" + (f"\n\n{notes_output}" if notes_output else "")
-        )
-    return "\n\n".join(sections)
+    for index, group in enumerate(groups):
+        if index > 0:
+            console.print()
+        console.print(f"# field: {group.field.name}")
+        console.print()
+        print_random_notes(group.notes)
 
 
 def resolve_note_reference(repository: ZembraRepository, note_ref: str) -> str:
@@ -560,9 +583,9 @@ def list_fields(
 @random_app.command("notes")
 def random_notes(
     number: Annotated[
-        int,
+        int | None,
         typer.Option("-n", "--number", help="Number of random notes to return."),
-    ] = 3,
+    ] = None,
     json_output: Annotated[
         bool,
         typer.Option("--json", help="Output random notes as JSON."),
@@ -571,16 +594,17 @@ def random_notes(
     """Show random visible notes.
 
     Args:
-        number: Maximum number of random notes to print.
+        number: Optional maximum number of random notes to print.
         json_output: Whether to print JSON instead of human-readable text.
 
     Returns:
         None. The command prints random notes or exits on failure.
     """
-    require_positive_number(number, "Number")
+    resolved_number = resolve_random_number(number, json_output)
+    require_positive_number(resolved_number, "Number")
     try:
         with open_cli_repository() as (repository, _location):
-            notes = repository.random_notes(number)
+            notes = repository.random_notes(resolved_number)
     except ZembraHttpClientError as error:
         fail_command(error.message)
     except sqlite3.Error as error:
@@ -590,7 +614,7 @@ def random_notes(
         payload = {"notes": [note_with_metadata_to_dict(note) for note in notes]}
         typer.echo(json.dumps(payload, ensure_ascii=False))
         return
-    typer.echo(render_random_notes(notes))
+    print_random_notes(notes)
 
 
 @random_app.command("tags")
@@ -598,11 +622,11 @@ def random_tags(
     number: Annotated[
         int,
         typer.Option("-n", "--number", help="Number of random tags to return."),
-    ] = 2,
+    ] = DEFAULT_RANDOM_GROUP_COUNT,
     count: Annotated[
         int,
         typer.Option("--count", help="Maximum cumulative number of notes to return."),
-    ] = 5,
+    ] = DEFAULT_RANDOM_GROUP_NOTE_COUNT,
     json_output: Annotated[
         bool,
         typer.Option("--json", help="Output random tag groups as JSON."),
@@ -632,7 +656,7 @@ def random_tags(
         payload = {"tagged_notes": [tagged_notes_group_to_dict(group) for group in groups]}
         typer.echo(json.dumps(payload, ensure_ascii=False))
         return
-    typer.echo(render_random_tagged_notes(groups))
+    print_random_tagged_notes(groups)
 
 
 @random_app.command("fields")
@@ -640,11 +664,11 @@ def random_fields(
     number: Annotated[
         int,
         typer.Option("-n", "--number", help="Number of random fields to return."),
-    ] = 2,
+    ] = DEFAULT_RANDOM_GROUP_COUNT,
     count: Annotated[
         int,
         typer.Option("--count", help="Maximum cumulative number of notes to return."),
-    ] = 5,
+    ] = DEFAULT_RANDOM_GROUP_NOTE_COUNT,
     json_output: Annotated[
         bool,
         typer.Option("--json", help="Output random field groups as JSON."),
@@ -674,7 +698,7 @@ def random_fields(
         payload = {"field_notes": [field_notes_group_to_dict(group) for group in groups]}
         typer.echo(json.dumps(payload, ensure_ascii=False))
         return
-    typer.echo(render_random_field_notes(groups))
+    print_random_field_notes(groups)
 
 
 @app.command()

@@ -43,7 +43,7 @@
 
 | 命令 | 参数 | 行为 |
 | --- | --- | --- |
-| `random notes` | `-n/--number`，默认 `3`；`--json` | 返回随机可见笔记 |
+| `random notes` | `-n/--number`；非 JSON 默认 `3`，JSON 默认 `20`；`--json` | 返回随机可见笔记 |
 | `random tags` | `-n/--number`，默认 `2`；`--count`，默认 `5`；`--json` | 随机选 tag 并返回分组笔记 |
 | `random fields` | `-n/--number`，默认 `2`；`--count`，默认 `5`；`--json` | 随机选 field 并返回分组笔记 |
 
@@ -118,7 +118,7 @@ CLI 层新增格式化函数，保证 direct 和 HTTP 共用输出。
 | `render_random_tagged_notes(...)` | 人类可读展示 tag 分组 |
 | `render_random_field_notes(...)` | 人类可读展示 field 分组 |
 
-人类可读输出使用简单稳定文本，不使用表格承载 content，避免长文本或多行笔记被表格压缩。建议格式：
+人类可读输出使用 Rich 渲染 note content。元数据使用简单稳定文本，content 使用 `rich.markdown.Markdown` 展示，避免长文本或多行笔记被表格压缩，同时保留 Markdown 标题、列表、代码块等基本表现。建议格式：
 
 ```text
 abcd1234...  Human
@@ -127,7 +127,7 @@ Tags: cli, notes
 Created: 1777279791
 Updated: 1777279791
 Content:
-完整笔记内容
+<Markdown 渲染后的完整笔记内容>
 ```
 
 分组输出先展示 group 标题，再展示组内笔记：
@@ -141,7 +141,7 @@ Tags: cli, notes
 Created: 1777279791
 Updated: 1777279791
 Content:
-完整笔记内容
+<Markdown 渲染后的完整笔记内容>
 ```
 
 JSON 输出使用 `json.dumps(..., ensure_ascii=False)`，不混入 Rich 样式文本。
