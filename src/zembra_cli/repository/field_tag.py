@@ -8,6 +8,18 @@ from zembra_cli.repository.exceptions import RecordNotFoundError
 class FieldTagRepository(BaseRepository):
     """Provide field, tag, and note-tag association operations."""
 
+    def get_field(self, field_id: str) -> FieldRecord | None:
+        """Fetch a field by identifier.
+
+        Args:
+            field_id: Field identifier to look up.
+
+        Returns:
+            Matching field record, or None when no field exists.
+        """
+        row = self.connection.execute("SELECT * FROM fields WHERE id = ?", (field_id,)).fetchone()
+        return self._row_to_model(row, FieldRecord) if row is not None else None
+
     def get_field_by_name(self, name: str) -> FieldRecord | None:
         """Fetch a field by name.
 

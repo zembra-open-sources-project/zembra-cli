@@ -3,7 +3,7 @@
 import pytest
 from pydantic import ValidationError
 
-from zembra_cli.models import FieldRecord, NoteLinkRecord, NoteRecord
+from zembra_cli.models import FieldRecord, NoteLinkRecord, NoteRecord, NoteWithMetadata, TagRecord
 
 
 def test_note_record_accepts_valid_minimal_note() -> None:
@@ -91,3 +91,23 @@ def test_note_link_record_rejects_self_link() -> None:
             target_note_id="note_1",
             created_at=1,
         )
+
+
+def test_note_with_metadata_dumps_complete_note_field_and_tags() -> None:
+    """Verify random note DTO preserves full note metadata.
+
+    Args:
+        None.
+
+    Returns:
+        None.
+    """
+    note = NoteRecord(id="note_1", content="full\ncontent", created_at=1, updated_at=2)
+    field = FieldRecord(id="field_1", name="work", created_at=1)
+    tag = TagRecord(id="tag_1", name="cli", created_at=1)
+
+    payload = NoteWithMetadata(note=note, field=field, tags=[tag]).model_dump()
+
+    assert payload["note"]["content"] == "full\ncontent"
+    assert payload["field"]["name"] == "work"
+    assert payload["tags"][0]["name"] == "cli"

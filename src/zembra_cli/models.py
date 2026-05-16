@@ -110,6 +110,44 @@ class NoteRecord(SchemaModel):
         return self
 
 
+class NoteWithMetadata(SchemaModel):
+    """Represent a note with user-facing taxonomy metadata.
+
+    Attributes:
+        note: Persisted note record.
+        field: Optional field associated with the note.
+        tags: Tags associated with the note, sorted for stable display.
+    """
+
+    note: NoteRecord
+    field: FieldRecord | None = None
+    tags: list[TagRecord] = Field(default_factory=list)
+
+
+class TaggedNotesGroup(SchemaModel):
+    """Represent notes grouped under one tag.
+
+    Attributes:
+        tag: Tag used as the group key.
+        notes: Visible notes associated with the tag.
+    """
+
+    tag: TagRecord
+    notes: list[NoteWithMetadata] = Field(default_factory=list)
+
+
+class FieldNotesGroup(SchemaModel):
+    """Represent notes grouped under one field.
+
+    Attributes:
+        field: Field used as the group key.
+        notes: Visible notes associated with the field.
+    """
+
+    field: FieldRecord
+    notes: list[NoteWithMetadata] = Field(default_factory=list)
+
+
 class NoteTagRecord(SchemaModel):
     """Represent one row from the note_tags table.
 

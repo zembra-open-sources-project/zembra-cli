@@ -3,7 +3,8 @@
 from collections.abc import Sequence
 from typing import Literal, Protocol
 
-from zembra_cli.models import FieldRecord, NoteRecord, TagRecord
+from zembra_cli.models import FieldNotesGroup, FieldRecord, NoteRecord, NoteWithMetadata, TagRecord
+from zembra_cli.models import TaggedNotesGroup
 
 
 class CliRepository(Protocol):
@@ -65,4 +66,36 @@ class CliRepository(Protocol):
 
         Returns:
             Ordered note records.
+        """
+
+    def random_notes(self, number: int) -> list[NoteWithMetadata]:
+        """List random visible notes with metadata.
+
+        Args:
+            number: Maximum number of notes to return.
+
+        Returns:
+            Random visible note records with field and tag metadata.
+        """
+
+    def random_tagged_notes(self, number: int, count: int) -> list[TaggedNotesGroup]:
+        """List visible notes grouped by randomly selected tags.
+
+        Args:
+            number: Maximum number of tag groups to return.
+            count: Maximum cumulative number of notes to return.
+
+        Returns:
+            Random tag groups containing visible note records.
+        """
+
+    def random_field_notes(self, number: int, count: int) -> list[FieldNotesGroup]:
+        """List visible notes grouped by randomly selected fields.
+
+        Args:
+            number: Maximum number of field groups to return.
+            count: Maximum cumulative number of notes to return.
+
+        Returns:
+            Random field groups containing visible note records.
         """

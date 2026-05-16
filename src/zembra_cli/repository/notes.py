@@ -3,7 +3,15 @@
 from collections.abc import Sequence
 from typing import Literal
 
-from zembra_cli.models import NoteRecord, NoteRevisionRecord
+from zembra_cli.models import (
+    FieldNotesGroup,
+    FieldRecord,
+    NoteRecord,
+    NoteRevisionRecord,
+    NoteWithMetadata,
+    TaggedNotesGroup,
+    TagRecord,
+)
 from zembra_cli.repository.exceptions import (
     AmbiguousNoteReferenceError,
     InvalidNoteReferenceError,
@@ -157,6 +165,92 @@ class ZembraRepository(FieldTagRepository):
             ).fetchall()
         return [self._row_to_model(row, NoteRecord) for row in rows]
 
+    def random_notes(self, number: int) -> list[NoteWithMetadata]:
+        """List random visible notes with field and tag metadata.
+
+        Args:
+            number: Maximum number of notes to return.
+
+        Returns:
+            Random non-deleted and non-archived notes with metadata.
+        """
+        rows = self.connection.execute(
+            """
+            SELECT * FROM notes
+            WHERE deleted_at IS NULL AND archived_at IS NULL
+            ORDER BY RANDOM()
+            LIMIT ?
+            """,
+            (number,),
+        ).fetchall()
+        notes = [self._row_to_model(row, NoteRecord) for row in rows]
+        return [self._note_with_metadata(note) for note in notes]
+
+    def random_tagged_notes(self, number: int, count: int) -> list[TaggedNotesGroup]:
+        """List visible notes grouped under randomly selected tags.
+
+        Args:
+            number: Maximum number of tag groups to return.
+            count: Maximum cumulative number of notes to return.
+
+        Returns:
+            Random tag groups with visible notes and metadata.
+        """
+        tag_rows = self.connection.execute(
+            """
+            SELECT DISTINCT tags.*
+            FROM tags
+            JOIN note_tags ON note_tags.tag_id = tags.id
+            JOIN notes ON notes.id = note_tags.note_id
+            WHERE notes.deleted_at IS NULL AND notes.archived_at IS NULL
+            ORDER BY RANDOM()
+            LIMIT ?
+            """,
+            (number,),
+        ).fetchall()
+        groups: list[TaggedNotesGroup] = []
+        remaining_count = count
+        for tag_row in tag_rows:
+            if remaining_count <= 0:
+                break
+            tag = self._row_to_model(tag_row, TagRecord)
+            notes = self._random_visible_notes_for_tag(tag.id, remaining_count)
+            remaining_count -= len(notes)
+            groups.append(TaggedNotesGroup(tag=tag, notes=notes))
+        return groups
+
+    def random_field_notes(self, number: int, count: int) -> list[FieldNotesGroup]:
+        """List visible notes grouped under randomly selected fields.
+
+        Args:
+            number: Maximum number of field groups to return.
+            count: Maximum cumulative number of notes to return.
+
+        Returns:
+            Random field groups with visible notes and metadata.
+        """
+        field_rows = self.connection.execute(
+            """
+            SELECT DISTINCT fields.*
+            FROM fields
+            JOIN notes ON notes.field_id = fields.id
+            WHERE notes.deleted_at IS NULL AND notes.archived_at IS NULL
+            ORDER BY RANDOM()
+            LIMIT ?
+            """,
+            (number,),
+        ).fetchall()
+        groups: list[FieldNotesGroup] = []
+        remaining_count = count
+        for field_row in field_rows:
+            if remaining_count <= 0:
+                break
+            field = self._row_to_model(field_row, FieldRecord)
+            notes = self._random_visible_notes_for_field(field.id, remaining_count)
+            remaining_count -= len(notes)
+            groups.append(FieldNotesGroup(field=field, notes=notes))
+        return groups
+
     def update_note_content(
         self,
         note_id: str,
@@ -231,6 +325,67 @@ class ZembraRepository(FieldTagRepository):
                 (deleted_at, note_id),
             )
         return self._require_note(note_id, include_deleted=True)
+
+    def _note_with_metadata(self, note: NoteRecord) -> NoteWithMetadata:
+        """Attach field and tags to a note record.
+
+        Args:
+            note: Note record to enrich.
+
+        Returns:
+            Note record with optional field and tag metadata.
+        """
+        field = self.get_field(note.field_id) if note.field_id is not None else None
+        tags = self.list_note_tags(note.id)
+        return NoteWithMetadata(note=note, field=field, tags=tags)
+
+    def _random_visible_notes_for_tag(self, tag_id: str, limit: int) -> list[NoteWithMetadata]:
+        """List random visible notes associated with one tag.
+
+        Args:
+            tag_id: Tag identifier used for filtering.
+            limit: Maximum number of notes to return.
+
+        Returns:
+            Visible notes associated with the tag and enriched with metadata.
+        """
+        rows = self.connection.execute(
+            """
+            SELECT notes.*
+            FROM notes
+            JOIN note_tags ON note_tags.note_id = notes.id
+            WHERE note_tags.tag_id = ?
+              AND notes.deleted_at IS NULL
+              AND notes.archived_at IS NULL
+            ORDER BY RANDOM()
+            LIMIT ?
+            """,
+            (tag_id, limit),
+        ).fetchall()
+        return [self._note_with_metadata(self._row_to_model(row, NoteRecord)) for row in rows]
+
+    def _random_visible_notes_for_field(self, field_id: str, limit: int) -> list[NoteWithMetadata]:
+        """List random visible notes associated with one field.
+
+        Args:
+            field_id: Field identifier used for filtering.
+            limit: Maximum number of notes to return.
+
+        Returns:
+            Visible notes associated with the field and enriched with metadata.
+        """
+        rows = self.connection.execute(
+            """
+            SELECT * FROM notes
+            WHERE field_id = ?
+              AND deleted_at IS NULL
+              AND archived_at IS NULL
+            ORDER BY RANDOM()
+            LIMIT ?
+            """,
+            (field_id, limit),
+        ).fetchall()
+        return [self._note_with_metadata(self._row_to_model(row, NoteRecord)) for row in rows]
 
     def list_note_revisions(self, note_id: str) -> list[NoteRevisionRecord]:
         """List revisions for a note by creation time.

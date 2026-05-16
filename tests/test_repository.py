@@ -344,6 +344,82 @@ def test_remove_tag_from_note_keeps_tag_record(repository: ZembraRepository) -> 
     assert repository.get_tag_by_name("python") is not None
 
 
+def test_random_notes_returns_visible_notes_with_metadata(repository: ZembraRepository) -> None:
+    """Verify random notes include field and tags while excluding hidden notes.
+
+    Args:
+        repository: Repository fixture.
+
+    Returns:
+        None.
+    """
+    visible = repository.create_note("visible content", field_name="work", tag_names=["cli", "ai"])
+    archived = repository.create_note("archived", field_name="work", tag_names=["cli"])
+    deleted = repository.create_note("deleted", field_name="work", tag_names=["ai"])
+    repository.archive_note(archived.id)
+    repository.delete_note(deleted.id)
+
+    notes = repository.random_notes(5)
+
+    assert [item.note.id for item in notes] == [visible.id]
+    assert notes[0].note.content == "visible content"
+    assert notes[0].field is not None
+    assert notes[0].field.name == "work"
+    assert [tag.name for tag in notes[0].tags] == ["ai", "cli"]
+
+
+def test_random_tagged_notes_respects_group_and_note_limits(
+    repository: ZembraRepository,
+) -> None:
+    """Verify random tag groups only include visible notes and respect count.
+
+    Args:
+        repository: Repository fixture.
+
+    Returns:
+        None.
+    """
+    repository.create_note("alpha", field_name="work", tag_names=["cli"])
+    repository.create_note("beta", field_name="work", tag_names=["ai"])
+    archived = repository.create_note("archived", field_name="work", tag_names=["hidden"])
+    repository.archive_note(archived.id)
+
+    groups = repository.random_tagged_notes(number=5, count=1)
+
+    assert len(groups) == 1
+    assert groups[0].tag.name in {"ai", "cli"}
+    assert len(groups[0].notes) == 1
+    assert groups[0].notes[0].field is not None
+    assert groups[0].notes[0].field.name == "work"
+    assert groups[0].notes[0].note.content in {"alpha", "beta"}
+
+
+def test_random_field_notes_respects_group_and_note_limits(
+    repository: ZembraRepository,
+) -> None:
+    """Verify random field groups only include visible notes and respect count.
+
+    Args:
+        repository: Repository fixture.
+
+    Returns:
+        None.
+    """
+    repository.create_note("alpha", field_name="work", tag_names=["cli"])
+    repository.create_note("beta", field_name="life", tag_names=["ai"])
+    deleted = repository.create_note("deleted", field_name="hidden", tag_names=["private"])
+    repository.delete_note(deleted.id)
+
+    groups = repository.random_field_notes(number=5, count=1)
+
+    assert len(groups) == 1
+    assert groups[0].field.name in {"life", "work"}
+    assert len(groups[0].notes) == 1
+    assert groups[0].notes[0].field is not None
+    assert groups[0].notes[0].field.name == groups[0].field.name
+    assert groups[0].notes[0].note.content in {"alpha", "beta"}
+
+
 def test_resolve_note_id_accepts_full_id(connection: sqlite3.Connection) -> None:
     """Verify complete note ids resolve through the exact lookup path.
 
