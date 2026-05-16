@@ -264,7 +264,10 @@ def render_random_tagged_notes(groups: list[TaggedNotesGroup]) -> str:
     sections = []
     for group in groups:
         notes_output = render_random_notes(group.notes)
-        sections.append(f"# tag: {group.tag.name}" + (f"\n\n{notes_output}" if notes_output else ""))
+        section = f"# tag: {group.tag.name}"
+        if notes_output:
+            section = f"{section}\n\n{notes_output}"
+        sections.append(section)
     return "\n\n".join(sections)
 
 

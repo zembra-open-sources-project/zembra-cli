@@ -3,8 +3,14 @@
 from collections.abc import Sequence
 from typing import Literal, Protocol
 
-from zembra_cli.models import FieldNotesGroup, FieldRecord, NoteRecord, NoteWithMetadata, TagRecord
-from zembra_cli.models import TaggedNotesGroup
+from zembra_cli.models import (
+    FieldNotesGroup,
+    FieldRecord,
+    NoteRecord,
+    NoteWithMetadata,
+    TaggedNotesGroup,
+    TagRecord,
+)
 
 
 class CliRepository(Protocol):

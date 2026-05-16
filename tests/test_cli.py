@@ -12,8 +12,14 @@ from zembra_cli import __version__, cli
 from zembra_cli.cli import app
 from zembra_cli.config import load_config
 from zembra_cli.database import database_connection, initialize_database, missing_core_tables
-from zembra_cli.models import FieldNotesGroup, FieldRecord, NoteRecord, NoteWithMetadata, TagRecord
-from zembra_cli.models import TaggedNotesGroup
+from zembra_cli.models import (
+    FieldNotesGroup,
+    FieldRecord,
+    NoteRecord,
+    NoteWithMetadata,
+    TaggedNotesGroup,
+    TagRecord,
+)
 from zembra_cli.repository import (
     AmbiguousNoteReferenceError,
     InvalidNoteReferenceError,

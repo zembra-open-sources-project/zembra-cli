@@ -95,7 +95,7 @@
 
 ### Task #6: 补齐自动化测试
 
-**状态：** Designed
+**状态：** Finished
 
 **文件：**
 
@@ -107,11 +107,11 @@
 - 功能：覆盖模型、direct repository、HTTP repository 和 CLI 命令行为。
 - 实现说明：repository 测试构造带 field/tag、归档、删除的笔记，验证可见笔记语义。HTTP 测试用 `httpx.MockTransport` 验证请求和 metadata 补齐。CLI 测试覆盖 direct / HTTP、默认输出、`--json`、参数错误。
 - 预期验证结果：定向测试全部通过，且断言覆盖完整 content、field、tags。
-- 完成时间：
+- 完成时间：2026.05.16
 
 ### Task #7: 运行验证并更新计划状态
 
-**状态：** Designed
+**状态：** Finished
 
 **文件：**
 
@@ -121,7 +121,7 @@
 - 功能：运行验证命令，记录验证结果，并按实际完成情况更新本计划状态。
 - 实现说明：至少运行 `uv run pytest tests/test_repository.py tests/test_http_client.py tests/test_cli.py -q`，最终运行 `uv run pytest -q`。如果项目已有 lint 命令且不引入额外配置成本，可补充运行。
 - 预期验证结果：相关测试和全量测试通过；验证记录写入本计划；等待用户验收，未经用户允许不移动到 completed。
-- 完成时间：
+- 完成时间：2026.05.16
 
 ## 提交计划
 
@@ -135,4 +135,10 @@
 
 ## 验证记录
 
-待执行。
+2026.05.16：已运行 `uv run pytest tests/test_models.py tests/test_repository.py -q`，29 个测试通过。
+
+2026.05.16：已运行 `uv run pytest tests/test_http_client.py tests/test_cli.py tests/test_repository.py -q`，76 个测试通过。
+
+2026.05.16：已运行 `uv run pytest -q`，120 个测试通过。
+
+2026.05.16：已运行 `uv run ruff check .`，检查通过。
