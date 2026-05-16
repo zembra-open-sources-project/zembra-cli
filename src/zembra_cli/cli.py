@@ -21,6 +21,7 @@ from zembra_cli.database import (
 )
 from zembra_cli.http_client import HttpZembraRepository, ZembraHttpClientError
 from zembra_cli.interactive import render_intro_for_repository, run_interactive_session
+from zembra_cli.models import FieldNotesGroup, NoteWithMetadata, TaggedNotesGroup
 from zembra_cli.repository import (
     AmbiguousNoteReferenceError,
     CliRepository,
@@ -38,8 +39,10 @@ app = typer.Typer(
 console = Console()
 config_app = typer.Typer(help="Manage zembra system configuration.")
 list_app = typer.Typer(help="List zembra fields and tags.")
+random_app = typer.Typer(help="Show random zembra notes.")
 app.add_typer(config_app, name="config")
 app.add_typer(list_app, name="list")
+app.add_typer(random_app, name="random")
 
 
 def parse_tag_values(tag_values: list[str] | None) -> list[str]:
@@ -161,6 +164,126 @@ def select_list_names(names: list[str], number: int, list_all: bool) -> list[str
     if list_all:
         return names
     return names[:number]
+
+
+def require_positive_number(value: int, name: str) -> None:
+    """Validate a positive integer CLI option.
+
+    Args:
+        value: User-provided integer option.
+        name: Human-readable option name used in the error message.
+
+    Returns:
+        None. The command exits when validation fails.
+    """
+    if value < 1:
+        fail_command(f"{name} must be greater than or equal to 1.")
+
+
+def note_with_metadata_to_dict(item: NoteWithMetadata) -> dict:
+    """Convert a note with metadata to a JSON-compatible dictionary.
+
+    Args:
+        item: Note and metadata object returned by a repository.
+
+    Returns:
+        JSON-compatible dictionary preserving complete note, field, and tags.
+    """
+    return item.model_dump()
+
+
+def tagged_notes_group_to_dict(group: TaggedNotesGroup) -> dict:
+    """Convert a tagged notes group to a JSON-compatible dictionary.
+
+    Args:
+        group: Tagged notes group returned by a repository.
+
+    Returns:
+        JSON-compatible dictionary preserving the group tag and notes.
+    """
+    return group.model_dump()
+
+
+def field_notes_group_to_dict(group: FieldNotesGroup) -> dict:
+    """Convert a field notes group to a JSON-compatible dictionary.
+
+    Args:
+        group: Field notes group returned by a repository.
+
+    Returns:
+        JSON-compatible dictionary preserving the group field and notes.
+    """
+    return group.model_dump()
+
+
+def format_note_with_metadata(item: NoteWithMetadata) -> str:
+    """Format a note with metadata as human-readable text.
+
+    Args:
+        item: Note and metadata object returned by a repository.
+
+    Returns:
+        Multi-line text that preserves complete note content.
+    """
+    field_name = item.field.name if item.field is not None else "null"
+    tag_names = ", ".join(tag.name for tag in item.tags) if item.tags else "[]"
+    return "\n".join(
+        [
+            f"{item.note.id}  {item.note.role}",
+            f"Field: {field_name}",
+            f"Tags: {tag_names}",
+            f"Created: {item.note.created_at}",
+            f"Updated: {item.note.updated_at}",
+            "Content:",
+            item.note.content,
+        ]
+    )
+
+
+def render_random_notes(notes: list[NoteWithMetadata]) -> str:
+    """Render random notes as human-readable text.
+
+    Args:
+        notes: Random note records with metadata.
+
+    Returns:
+        Human-readable output for terminal display.
+    """
+    return "\n\n".join(format_note_with_metadata(note) for note in notes)
+
+
+def render_random_tagged_notes(groups: list[TaggedNotesGroup]) -> str:
+    """Render random tagged notes as human-readable text.
+
+    Args:
+        groups: Random tag groups with note metadata.
+
+    Returns:
+        Human-readable output for terminal display.
+    """
+    sections = []
+    for group in groups:
+        notes_output = render_random_notes(group.notes)
+        sections.append(f"# tag: {group.tag.name}" + (f"\n\n{notes_output}" if notes_output else ""))
+    return "\n\n".join(sections)
+
+
+def render_random_field_notes(groups: list[FieldNotesGroup]) -> str:
+    """Render random field notes as human-readable text.
+
+    Args:
+        groups: Random field groups with note metadata.
+
+    Returns:
+        Human-readable output for terminal display.
+    """
+    sections = []
+    for group in groups:
+        notes_output = render_random_notes(group.notes)
+        sections.append(
+            f"# field: {group.field.name}" + (f"\n\n{notes_output}" if notes_output else "")
+        )
+    return "\n\n".join(sections)
 
 
 def resolve_note_reference(repository: ZembraRepository, note_ref: str) -> str:
@@ -429,6 +552,126 @@ def list_fields(
 
     selected_names = select_list_names(names, number, list_all)
     typer.echo(format_compact_names(selected_names))
+
+
+@random_app.command("notes")
+def random_notes(
+    number: Annotated[
+        int,
+        typer.Option("-n", "--number", help="Number of random notes to return."),
+    ] = 3,
+    json_output: Annotated[
+        bool,
+        typer.Option("--json", help="Output random notes as JSON."),
+    ] = False,
+) -> None:
+    """Show random visible notes.
+
+    Args:
+        number: Maximum number of random notes to print.
+        json_output: Whether to print JSON instead of human-readable text.
+
+    Returns:
+        None. The command prints random notes or exits on failure.
+    """
+    require_positive_number(number, "Number")
+    try:
+        with open_cli_repository() as (repository, _location):
+            notes = repository.random_notes(number)
+    except ZembraHttpClientError as error:
+        fail_command(error.message)
+    except sqlite3.Error as error:
+        fail_command(f"Could not list random notes: {error}")
+
+    if json_output:
+        payload = {"notes": [note_with_metadata_to_dict(note) for note in notes]}
+        typer.echo(json.dumps(payload, ensure_ascii=False))
+        return
+    typer.echo(render_random_notes(notes))
+
+
+@random_app.command("tags")
+def random_tags(
+    number: Annotated[
+        int,
+        typer.Option("-n", "--number", help="Number of random tags to return."),
+    ] = 2,
+    count: Annotated[
+        int,
+        typer.Option("--count", help="Maximum cumulative number of notes to return."),
+    ] = 5,
+    json_output: Annotated[
+        bool,
+        typer.Option("--json", help="Output random tag groups as JSON."),
+    ] = False,
+) -> None:
+    """Show visible notes grouped by random tags.
+
+    Args:
+        number: Maximum number of random tag groups to print.
+        count: Maximum cumulative number of notes to print.
+        json_output: Whether to print JSON instead of human-readable text.
+
+    Returns:
+        None. The command prints random tag groups or exits on failure.
+    """
+    require_positive_number(number, "Number")
+    require_positive_number(count, "Count")
+    try:
+        with open_cli_repository() as (repository, _location):
+            groups = repository.random_tagged_notes(number, count)
+    except ZembraHttpClientError as error:
+        fail_command(error.message)
+    except sqlite3.Error as error:
+        fail_command(f"Could not list random tag notes: {error}")
+
+    if json_output:
+        payload = {"tagged_notes": [tagged_notes_group_to_dict(group) for group in groups]}
+        typer.echo(json.dumps(payload, ensure_ascii=False))
+        return
+    typer.echo(render_random_tagged_notes(groups))
+
+
+@random_app.command("fields")
+def random_fields(
+    number: Annotated[
+        int,
+        typer.Option("-n", "--number", help="Number of random fields to return."),
+    ] = 2,
+    count: Annotated[
+        int,
+        typer.Option("--count", help="Maximum cumulative number of notes to return."),
+    ] = 5,
+    json_output: Annotated[
+        bool,
+        typer.Option("--json", help="Output random field groups as JSON."),
+    ] = False,
+) -> None:
+    """Show visible notes grouped by random fields.
+
+    Args:
+        number: Maximum number of random field groups to print.
+        count: Maximum cumulative number of notes to print.
+        json_output: Whether to print JSON instead of human-readable text.
+
+    Returns:
+        None. The command prints random field groups or exits on failure.
+    """
+    require_positive_number(number, "Number")
+    require_positive_number(count, "Count")
+    try:
+        with open_cli_repository() as (repository, _location):
+            groups = repository.random_field_notes(number, count)
+    except ZembraHttpClientError as error:
+        fail_command(error.message)
+    except sqlite3.Error as error:
+        fail_command(f"Could not list random field notes: {error}")
+
+    if json_output:
+        payload = {"field_notes": [field_notes_group_to_dict(group) for group in groups]}
+        typer.echo(json.dumps(payload, ensure_ascii=False))
+        return
+    typer.echo(render_random_field_notes(groups))
 
 
 @app.command()

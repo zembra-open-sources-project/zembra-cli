@@ -6,7 +6,14 @@ from typing import Any, Literal
 import httpx
 from pydantic import ValidationError
 
-from zembra_cli.models import FieldRecord, NoteRecord, TagRecord
+from zembra_cli.models import (
+    FieldNotesGroup,
+    FieldRecord,
+    NoteRecord,
+    NoteWithMetadata,
+    TaggedNotesGroup,
+    TagRecord,
+)
 
 DEFAULT_HTTP_TIMEOUT_SECONDS = 10.0
 
@@ -166,6 +173,93 @@ class HttpZembraRepository:
         notes_data = self._require_key(data, "notes")
         return self._parse_model_list(notes_data, NoteRecord, "notes")
 
+    def random_notes(self, number: int) -> list[NoteWithMetadata]:
+        """List random visible notes through ``GET /random/notes``.
+
+        Args:
+            number: Maximum number of notes to return.
+
+        Returns:
+            Random visible note records with field and tag metadata.
+        """
+        data = self._request_json("GET", "/random/notes", params={"n": number})
+        notes_data = self._require_key(data, "notes")
+        notes = self._parse_model_list(notes_data, NoteRecord, "notes")
+        return self._notes_with_metadata(notes)
+
+    def random_tagged_notes(self, number: int, count: int) -> list[TaggedNotesGroup]:
+        """List notes grouped by random tags through ``GET /random/tags``.
+
+        Args:
+            number: Maximum number of tag groups to return.
+            count: Maximum cumulative number of notes to return.
+
+        Returns:
+            Random tag groups with visible note metadata.
+        """
+        data = self._request_json(
+            "GET",
+            "/random/tags",
+            params={"n": number, "count": count},
+        )
+        groups_data = self._require_key(data, "tagged_notes")
+        if not isinstance(groups_data, list):
+            raise ZembraHttpClientError('Zembra backend returned invalid "tagged_notes" data.')
+
+        fields_by_id = self._fields_by_id()
+        groups: list[TaggedNotesGroup] = []
+        for group_data in groups_data:
+            if not isinstance(group_data, dict):
+                raise ZembraHttpClientError(
+                    'Zembra backend returned invalid "tagged_notes" data.'
+                )
+            tag = self._parse_model(self._require_key(group_data, "tag"), TagRecord, "tag")
+            notes_data = self._require_key(group_data, "notes")
+            notes = self._parse_model_list(notes_data, NoteRecord, "notes")
+            groups.append(
+                TaggedNotesGroup(
+                    tag=tag,
+                    notes=[self._note_with_metadata(note, fields_by_id) for note in notes],
+                )
+            )
+        return groups
+
+    def random_field_notes(self, number: int, count: int) -> list[FieldNotesGroup]:
+        """List notes grouped by random fields through ``GET /random/fields``.
+
+        Args:
+            number: Maximum number of field groups to return.
+            count: Maximum cumulative number of notes to return.
+
+        Returns:
+            Random field groups with visible note metadata.
+        """
+        data = self._request_json(
+            "GET",
+            "/random/fields",
+            params={"n": number, "count": count},
+        )
+        groups_data = self._require_key(data, "field_notes")
+        if not isinstance(groups_data, list):
+            raise ZembraHttpClientError('Zembra backend returned invalid "field_notes" data.')
+
+        fields_by_id = self._fields_by_id()
+        groups: list[FieldNotesGroup] = []
+        for group_data in groups_data:
+            if not isinstance(group_data, dict):
+                raise ZembraHttpClientError('Zembra backend returned invalid "field_notes" data.')
+            field = self._parse_model(self._require_key(group_data, "field"), FieldRecord, "field")
+            notes_data = self._require_key(group_data, "notes")
+            notes = self._parse_model_list(notes_data, NoteRecord, "notes")
+            fields_by_id[field.id] = field
+            groups.append(
+                FieldNotesGroup(
+                    field=field,
+                    notes=[self._note_with_metadata(note, fields_by_id) for note in notes],
+                )
+            )
+        return groups
+
     def _request_json(self, method: str, path: str, **kwargs: Any) -> dict[str, Any]:
         """Send a request and decode a JSON object response.
 
@@ -234,6 +328,60 @@ class HttpZembraRepository:
         if key not in data:
             raise ZembraHttpClientError(f'Zembra backend response is missing "{key}".')
         return data[key]
+
+    def _fields_by_id(self) -> dict[str, FieldRecord]:
+        """List fields and index them by identifier.
+
+        Args:
+            None.
+
+        Returns:
+            Field records keyed by stable field identifier.
+        """
+        return {field.id: field for field in self.list_fields()}
+
+    def _notes_with_metadata(self, notes: list[NoteRecord]) -> list[NoteWithMetadata]:
+        """Attach metadata to a list of notes.
+
+        Args:
+            notes: Note records returned by the backend.
+
+        Returns:
+            Notes enriched with field and tag metadata.
+        """
+        fields_by_id = self._fields_by_id()
+        return [self._note_with_metadata(note, fields_by_id) for note in notes]
+
+    def _note_with_metadata(
+        self,
+        note: NoteRecord,
+        fields_by_id: dict[str, FieldRecord],
+    ) -> NoteWithMetadata:
+        """Attach field and tag metadata to one note.
+
+        Args:
+            note: Note record returned by the backend.
+            fields_by_id: Field records keyed by identifier.
+
+        Returns:
+            Note record with metadata needed by CLI output.
+        """
+        field = fields_by_id.get(note.field_id) if note.field_id is not None else None
+        tags = self._list_note_tags(note.id)
+        return NoteWithMetadata(note=note, field=field, tags=tags)
+
+    def _list_note_tags(self, note_ref: str) -> list[TagRecord]:
+        """List tags for a note through ``GET /notes/{note_ref}/tags``.
+
+        Args:
+            note_ref: Full note identifier or backend-accepted note reference.
+
+        Returns:
+            Tag records associated with the note.
+        """
+        data = self._request_json("GET", f"/notes/{note_ref}/tags")
+        tags_data = self._require_key(data, "tags")
+        return self._parse_model_list(tags_data, TagRecord, "tags")
 
     def _parse_model(
         self,

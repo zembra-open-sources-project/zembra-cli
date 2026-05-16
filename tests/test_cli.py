@@ -12,7 +12,8 @@ from zembra_cli import __version__, cli
 from zembra_cli.cli import app
 from zembra_cli.config import load_config
 from zembra_cli.database import database_connection, initialize_database, missing_core_tables
-from zembra_cli.models import FieldRecord, NoteRecord, TagRecord
+from zembra_cli.models import FieldNotesGroup, FieldRecord, NoteRecord, NoteWithMetadata, TagRecord
+from zembra_cli.models import TaggedNotesGroup
 from zembra_cli.repository import (
     AmbiguousNoteReferenceError,
     InvalidNoteReferenceError,
@@ -228,6 +229,46 @@ class FakeHttpRepository:
             Fake note records.
         """
         return [make_note("abcd0000000000000000000000000000", "saved")]
+
+    def random_notes(self, number: int) -> list[NoteWithMetadata]:
+        """Return fake random notes.
+
+        Args:
+            number: Maximum number of notes requested.
+
+        Returns:
+            Fake random notes with metadata.
+        """
+        note = make_note("abcd0000000000000000000000000000", "full http content")
+        field = FieldRecord(id="field-1", name="work", created_at=1)
+        tag = TagRecord(id="tag-1", name="cli", created_at=1)
+        return [NoteWithMetadata(note=note, field=field, tags=[tag])][:number]
+
+    def random_tagged_notes(self, number: int, count: int) -> list[TaggedNotesGroup]:
+        """Return fake random tag groups.
+
+        Args:
+            number: Maximum number of groups requested.
+            count: Maximum cumulative number of notes requested.
+
+        Returns:
+            Fake random tag groups with note metadata.
+        """
+        tag = TagRecord(id="tag-1", name="cli", created_at=1)
+        return [TaggedNotesGroup(tag=tag, notes=self.random_notes(count))][:number]
+
+    def random_field_notes(self, number: int, count: int) -> list[FieldNotesGroup]:
+        """Return fake random field groups.
+
+        Args:
+            number: Maximum number of groups requested.
+            count: Maximum cumulative number of notes requested.
+
+        Returns:
+            Fake random field groups with note metadata.
+        """
+        field = FieldRecord(id="field-1", name="work", created_at=1)
+        return [FieldNotesGroup(field=field, notes=self.random_notes(count))][:number]
 
 
 def test_version_flag_prints_package_version() -> None:
@@ -548,6 +589,159 @@ def test_list_tags_rejects_invalid_number(tmp_path, monkeypatch) -> None:
 
     assert result.exit_code == 1
     assert "Number must be greater than or equal to 1." in result.stderr
+
+
+def test_random_notes_json_outputs_complete_direct_metadata(tmp_path, monkeypatch) -> None:
+    """Verify random notes JSON includes complete content, field, and tags.
+
+    Args:
+        tmp_path: Pytest temporary directory fixture.
+        monkeypatch: Pytest monkeypatch fixture.
+
+    Returns:
+        None.
+    """
+    database_path = tmp_path / "zembra.sqlite3"
+    initialize_cli_database(database_path)
+    configure_cli_database(monkeypatch, tmp_path, database_path)
+    with database_connection(database_path) as connection:
+        repository = ZembraRepository(connection)
+        repository.create_note("full\ncontent", field_name="work", tag_names=["cli"])
+
+    result = runner.invoke(app, ["random", "notes", "-n", "3", "--json"])
+
+    assert result.exit_code == 0
+    payload = json.loads(result.stdout)
+    assert payload["notes"][0]["note"]["content"] == "full\ncontent"
+    assert payload["notes"][0]["field"]["name"] == "work"
+    assert payload["notes"][0]["tags"][0]["name"] == "cli"
+
+
+def test_random_notes_human_output_preserves_complete_direct_content(
+    tmp_path,
+    monkeypatch,
+) -> None:
+    """Verify human random notes output does not summarize content.
+
+    Args:
+        tmp_path: Pytest temporary directory fixture.
+        monkeypatch: Pytest monkeypatch fixture.
+
+    Returns:
+        None.
+    """
+    database_path = tmp_path / "zembra.sqlite3"
+    initialize_cli_database(database_path)
+    configure_cli_database(monkeypatch, tmp_path, database_path)
+    content = "first line\nsecond line without truncation"
+    with database_connection(database_path) as connection:
+        repository = ZembraRepository(connection)
+        repository.create_note(content, field_name="work", tag_names=["cli"])
+
+    result = runner.invoke(app, ["random", "notes", "-n", "1"])
+
+    assert result.exit_code == 0
+    assert "Field: work" in result.stdout
+    assert "Tags: cli" in result.stdout
+    assert content in result.stdout
+
+
+def test_random_tags_and_fields_json_output_direct_groups(tmp_path, monkeypatch) -> None:
+    """Verify random group commands output JSON with complete metadata.
+
+    Args:
+        tmp_path: Pytest temporary directory fixture.
+        monkeypatch: Pytest monkeypatch fixture.
+
+    Returns:
+        None.
+    """
+    database_path = tmp_path / "zembra.sqlite3"
+    initialize_cli_database(database_path)
+    configure_cli_database(monkeypatch, tmp_path, database_path)
+    with database_connection(database_path) as connection:
+        repository = ZembraRepository(connection)
+        repository.create_note("group content", field_name="work", tag_names=["cli"])
+
+    tags_result = runner.invoke(app, ["random", "tags", "-n", "2", "--count", "5", "--json"])
+    fields_result = runner.invoke(app, ["random", "fields", "-n", "2", "--count", "5", "--json"])
+
+    assert tags_result.exit_code == 0
+    assert fields_result.exit_code == 0
+    tags_payload = json.loads(tags_result.stdout)
+    fields_payload = json.loads(fields_result.stdout)
+    assert tags_payload["tagged_notes"][0]["tag"]["name"] == "cli"
+    assert tags_payload["tagged_notes"][0]["notes"][0]["note"]["content"] == "group content"
+    assert fields_payload["field_notes"][0]["field"]["name"] == "work"
+    assert fields_payload["field_notes"][0]["notes"][0]["tags"][0]["name"] == "cli"
+
+
+def test_random_notes_rejects_invalid_number(tmp_path, monkeypatch) -> None:
+    """Verify random notes rejects non-positive number values.
+
+    Args:
+        tmp_path: Pytest temporary directory fixture.
+        monkeypatch: Pytest monkeypatch fixture.
+
+    Returns:
+        None.
+    """
+    database_path = tmp_path / "zembra.sqlite3"
+    initialize_cli_database(database_path)
+    configure_cli_database(monkeypatch, tmp_path, database_path)
+
+    result = runner.invoke(app, ["random", "notes", "-n", "0"])
+
+    assert result.exit_code == 1
+    assert "Number must be greater than or equal to 1." in result.stderr
+
+
+def test_random_tags_rejects_invalid_count(tmp_path, monkeypatch) -> None:
+    """Verify random tags rejects non-positive count values.
+
+    Args:
+        tmp_path: Pytest temporary directory fixture.
+        monkeypatch: Pytest monkeypatch fixture.
+
+    Returns:
+        None.
+    """
+    database_path = tmp_path / "zembra.sqlite3"
+    initialize_cli_database(database_path)
+    configure_cli_database(monkeypatch, tmp_path, database_path)
+
+    result = runner.invoke(app, ["random", "tags", "--count", "0"])
+
+    assert result.exit_code == 1
+    assert "Count must be greater than or equal to 1." in result.stderr
+
+
+def test_random_notes_uses_http_mode_from_cli_config(tmp_path, monkeypatch) -> None:
+    """Verify random notes uses HTTP mode when configured.
+
+    Args:
+        tmp_path: Pytest temporary directory fixture.
+        monkeypatch: Pytest monkeypatch fixture.
+
+    Returns:
+        None.
+    """
+    FakeHttpRepository.instances = []
+    config_path = tmp_path / ".zembra.env"
+    config_path.write_text(
+        '[cli]\nmode = "http"\nhttp_base_url = "http://backend.test"\n',
+        encoding="utf-8",
+    )
+    monkeypatch.setattr(cli, "default_config_path", lambda: config_path)
+    monkeypatch.setattr(cli, "HttpZembraRepository", FakeHttpRepository)
+
+    result = runner.invoke(app, ["random", "notes", "-n", "3", "--json"])
+
+    assert result.exit_code == 0
+    payload = json.loads(result.stdout)
+    assert payload["notes"][0]["note"]["content"] == "full http content"
+    assert payload["notes"][0]["field"]["name"] == "work"
+    assert payload["notes"][0]["tags"][0]["name"] == "cli"
 
 
 def test_add_command_uses_http_mode_from_cli_config(tmp_path, monkeypatch) -> None:

@@ -65,7 +65,7 @@
 
 ### Task #4: 实现 HTTP random 方法
 
-**状态：** Designed
+**状态：** Finished
 
 **文件：**
 
@@ -75,11 +75,11 @@
 - 功能：在 `HttpZembraRepository` 中实现三类 random 方法。
 - 实现说明：`random_notes` 请求 `/random/notes?n={number}`；`random_tagged_notes` 请求 `/random/tags?n={number}&count={count}`；`random_field_notes` 请求 `/random/fields?n={number}&count={count}`。解析后端 response，并用 `/notes/{note_ref}/tags` 与 `/fields` 补齐每条 note 的 tags 和 field。
 - 预期验证结果：MockTransport 捕获到正确 path 和 query；响应解析为统一 DTO；缺字段或非法形状继续抛出 `ZembraHttpClientError`。
-- 完成时间：
+- 完成时间：2026.05.16
 
 ### Task #5: 新增 random CLI 子命令与输出格式
 
-**状态：** Designed
+**状态：** Finished
 
 **文件：**
 
@@ -89,7 +89,7 @@
 - 功能：新增 `zembra-cli random notes`、`zembra-cli random tags`、`zembra-cli random fields`。
 - 实现说明：新增 `random_app` 并挂载到主 app。`notes` 支持 `-n/--number` 默认 3 和 `--json`；`tags`、`fields` 支持 `-n/--number` 默认 2、`--count` 默认 5 和 `--json`。CLI 层校验参数大于等于 1。人类可读输出展示完整 note id、role、field、tags、created_at、updated_at、完整 content；JSON 输出使用 `ensure_ascii=False`，字段名对齐 `notes`、`tagged_notes`、`field_notes`。
 - 预期验证结果：direct 和 HTTP 模式都能执行 random 命令；默认输出不截断 content；`--json` 输出可解析 JSON 且不混入 Rich 样式文本；参数错误返回非 0。
-- 完成时间：
+- 完成时间：2026.05.16
 
 ## Phase #3: 验证、记录与提交准备
 

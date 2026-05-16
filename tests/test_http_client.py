@@ -23,20 +23,21 @@ def make_client(handler) -> httpx.Client:
     )
 
 
-def note_payload(content: str = "hello") -> dict:
+def note_payload(content: str = "hello", note_id: str = "abcd0000000000000000000000000000") -> dict:
     """Create a valid note response object.
 
     Args:
         content: Note content to include.
+        note_id: Note identifier to include.
 
     Returns:
         JSON-serializable note response.
     """
     return {
-        "id": "abcd0000000000000000000000000000",
+        "id": note_id,
         "content": content,
         "role": "Human",
-        "field_id": None,
+        "field_id": "field-1",
         "created_at": 1,
         "updated_at": 1,
         "archived_at": None,
@@ -154,6 +155,163 @@ def test_http_repository_lists_notes() -> None:
     repository = HttpZembraRepository("http://backend.test", client=make_client(handler))
 
     assert [note.content for note in repository.list_notes()] == ["saved"]
+
+
+def test_http_repository_random_notes_enriches_metadata() -> None:
+    """Verify random_notes calls the backend and adds field and tags.
+
+    Args:
+        None.
+
+    Returns:
+        None.
+    """
+    paths: list[str] = []
+
+    def handler(request: httpx.Request) -> httpx.Response:
+        """Return random notes and metadata responses.
+
+        Args:
+            request: Captured HTTP request.
+
+        Returns:
+            Mock HTTP response.
+        """
+        paths.append(str(request.url))
+        if request.url.path == "/random/notes":
+            return httpx.Response(200, json={"notes": [note_payload("full content")]})
+        if request.url.path == "/fields":
+            return httpx.Response(
+                200,
+                json={
+                    "fields": [{"id": "field-1", "name": "work", "created_at": 1}],
+                    "names": ["work"],
+                },
+            )
+        if request.url.path == "/notes/abcd0000000000000000000000000000/tags":
+            return httpx.Response(
+                200,
+                json={"tags": [{"id": "tag-1", "name": "cli", "created_at": 1}]},
+            )
+        return httpx.Response(404, json={"error": {"message": "missing", "code": "missing"}})
+
+    repository = HttpZembraRepository("http://backend.test", client=make_client(handler))
+
+    notes = repository.random_notes(3)
+
+    assert paths[0] == "http://backend.test/random/notes?n=3"
+    assert notes[0].note.content == "full content"
+    assert notes[0].field is not None
+    assert notes[0].field.name == "work"
+    assert [tag.name for tag in notes[0].tags] == ["cli"]
+
+
+def test_http_repository_random_tagged_notes_parses_groups() -> None:
+    """Verify random_tagged_notes parses groups and enriches notes.
+
+    Args:
+        None.
+
+    Returns:
+        None.
+    """
+
+    def handler(request: httpx.Request) -> httpx.Response:
+        """Return random tag group and metadata responses.
+
+        Args:
+            request: Captured HTTP request.
+
+        Returns:
+            Mock HTTP response.
+        """
+        if request.url.path == "/random/tags":
+            assert request.url.params["n"] == "2"
+            assert request.url.params["count"] == "5"
+            return httpx.Response(
+                200,
+                json={
+                    "tagged_notes": [
+                        {
+                            "tag": {"id": "tag-1", "name": "cli", "created_at": 1},
+                            "notes": [note_payload("tagged")],
+                        }
+                    ]
+                },
+            )
+        if request.url.path == "/fields":
+            return httpx.Response(
+                200,
+                json={
+                    "fields": [{"id": "field-1", "name": "work", "created_at": 1}],
+                    "names": ["work"],
+                },
+            )
+        if request.url.path == "/notes/abcd0000000000000000000000000000/tags":
+            return httpx.Response(
+                200,
+                json={"tags": [{"id": "tag-1", "name": "cli", "created_at": 1}]},
+            )
+        return httpx.Response(404, json={"error": {"message": "missing", "code": "missing"}})
+
+    repository = HttpZembraRepository("http://backend.test", client=make_client(handler))
+
+    groups = repository.random_tagged_notes(2, 5)
+
+    assert groups[0].tag.name == "cli"
+    assert groups[0].notes[0].note.content == "tagged"
+    assert groups[0].notes[0].field is not None
+    assert groups[0].notes[0].field.name == "work"
+    assert [tag.name for tag in groups[0].notes[0].tags] == ["cli"]
+
+
+def test_http_repository_random_field_notes_parses_groups() -> None:
+    """Verify random_field_notes parses groups and enriches notes.
+
+    Args:
+        None.
+
+    Returns:
+        None.
+    """
+
+    def handler(request: httpx.Request) -> httpx.Response:
+        """Return random field group and metadata responses.
+
+        Args:
+            request: Captured HTTP request.
+
+        Returns:
+            Mock HTTP response.
+        """
+        if request.url.path == "/random/fields":
+            assert request.url.params["n"] == "2"
+            assert request.url.params["count"] == "5"
+            return httpx.Response(
+                200,
+                json={
+                    "field_notes": [
+                        {
+                            "field": {"id": "field-1", "name": "work", "created_at": 1},
+                            "notes": [note_payload("field note")],
+                        }
+                    ]
+                },
+            )
+        if request.url.path == "/fields":
+            return httpx.Response(200, json={"fields": [], "names": []})
+        if request.url.path == "/notes/abcd0000000000000000000000000000/tags":
+            return httpx.Response(200, json={"tags": []})
+        return httpx.Response(404, json={"error": {"message": "missing", "code": "missing"}})
+
+    repository = HttpZembraRepository("http://backend.test", client=make_client(handler))
+
+    groups = repository.random_field_notes(2, 5)
+
+    assert groups[0].field.name == "work"
+    assert groups[0].notes[0].field is not None
+    assert groups[0].notes[0].field.name == "work"
+    assert groups[0].notes[0].note.content == "field note"
 
 
 def test_http_repository_raises_structured_error_message() -> None:
