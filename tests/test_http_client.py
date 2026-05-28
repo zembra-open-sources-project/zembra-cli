@@ -110,6 +110,7 @@ def test_http_repository_lists_tags_and_fields() -> None:
             Mock HTTP response.
         """
         if request.url.path == "/tags":
+            assert request.url.params["all"] == "true"
             return httpx.Response(
                 200,
                 json={
@@ -117,6 +118,7 @@ def test_http_repository_lists_tags_and_fields() -> None:
                     "names": ["cli"],
                 },
             )
+        assert request.url.params["all"] == "true"
         return httpx.Response(
             200,
             json={

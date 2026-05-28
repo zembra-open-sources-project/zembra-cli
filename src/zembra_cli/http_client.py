@@ -142,7 +142,7 @@ class HttpZembraRepository:
         Returns:
             Ordered tag records.
         """
-        data = self._request_json("GET", "/tags")
+        data = self._request_json("GET", "/tags", params={"all": "true"})
         tags_data = self._require_key(data, "tags")
         return self._parse_model_list(tags_data, TagRecord, "tags")
 
@@ -155,7 +155,7 @@ class HttpZembraRepository:
         Returns:
             Ordered field records.
         """
-        data = self._request_json("GET", "/fields")
+        data = self._request_json("GET", "/fields", params={"all": "true"})
         fields_data = self._require_key(data, "fields")
         return self._parse_model_list(fields_data, FieldRecord, "fields")
 
