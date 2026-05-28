@@ -7,3 +7,4 @@
 - [bfx001] (a65c4611) : 2026.04.27 完成 docs/bugfix/bfx001-unicode-backspace.md 对应 bugfix，将 zembra-cli run 的生产输入从内置 input 切换为 prompt_toolkit.prompt，保留 input_func 测试注入口并更新依赖锁文件，已通过 ruff、pytest 和用户中文退格验收。
 - [rc008] (06e862ea) : 2026.05.03 完成 docs/exec-plans/completed/cli/rc008-slash-command-help.md 对应开发，为 zembra-cli run 增加斜杠命令候选能力，使用 prompt_toolkit completer 在输入以 / 开头时临时展示 /help 与 /exit 说明，避免 Rich 表格刷屏，并通过 ruff、pytest 和用户交互验收。
 - [rc010] (98cade76) : 2026.05.16 完成 docs/exec-plans/completed/cli/rc010-random-notes.md 对应开发，为 zembra-cli 增加 random notes、random tags、random fields 三类命令，支持 direct 与 HTTP 双模式、JSON 输出和 Rich Markdown 人类可读渲染，并将 random notes 默认数量调整为非 JSON 三条、JSON 二十条；已通过 ruff 与全量 pytest 验证。
+- [rc009] (0ddf48d) : 2026.05.28 根据 localhost:3000 后端 OpenAPI 复核 zembra-cli HTTP 模式，确认 add --role Agent 在 direct 与 HTTP 模式均可创建 Agent 笔记，并修正 HTTP taxonomy 列表请求为 all=true，避免后端默认 limit 截断 list tags/list fields 的全量结果。
