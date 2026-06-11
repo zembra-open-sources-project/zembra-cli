@@ -22,6 +22,7 @@ from zembra_cli.database import (
 )
 from zembra_cli.http_client import HttpZembraRepository, ZembraHttpClientError
 from zembra_cli.interactive import render_intro_for_repository, run_interactive_session
+from zembra_cli.mcp_server import run_mcp_server
 from zembra_cli.models import FieldNotesGroup, NoteWithMetadata, TaggedNotesGroup
 from zembra_cli.repository import (
     AmbiguousNoteReferenceError,
@@ -430,6 +431,19 @@ def main(
     Returns:
         None.
     """
+
+
+@app.command("mcp")
+def mcp() -> None:
+    """Run the local Zembra MCP server over stdio.
+
+    Args:
+        None.
+
+    Returns:
+        None.
+    """
+    run_mcp_server()
 
 
 @app.command()

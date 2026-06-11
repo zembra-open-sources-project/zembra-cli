@@ -55,8 +55,32 @@ uv sync
 运行 CLI：
 
 ```bash
-uv run zembra --help
+uv run zembra-cli --help
 ```
+
+## MCP Server
+
+`zembra-cli` 可以作为本地 MCP Server 启动，链路为 MCP Client -> `zembra-cli` -> 本地 SQLite 数据库，不需要启动 HTTP backend。
+
+启动前需要先初始化 direct 模式数据库：
+
+```bash
+uv run zembra-cli init
+```
+
+启动 stdio MCP Server：
+
+```bash
+uv run zembra-cli mcp
+```
+
+首批 MCP tools：
+
+- `create_note`：创建 note，默认 `role` 为 `Agent`
+- `list_notes`：列出本地 notes
+- `list_tags`：列出本地 tags
+- `list_fields`：列出本地 fields
+- `random_notes`：随机返回可见 notes，并包含 field 与 tags
 
 运行测试：
 

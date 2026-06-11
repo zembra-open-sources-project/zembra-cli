@@ -309,6 +309,36 @@ def test_hello_command_prints_greeting() -> None:
     assert "Hello, Ada. Zembra is ready." in result.stdout
 
 
+def test_mcp_command_runs_local_server(monkeypatch) -> None:
+    """Verify the mcp command delegates to the local MCP server runner.
+
+    Args:
+        monkeypatch: Pytest monkeypatch fixture.
+
+    Returns:
+        None.
+    """
+    calls: list[str] = []
+
+    def fake_run_mcp_server() -> None:
+        """Record that the MCP server runner was invoked.
+
+        Args:
+            None.
+
+        Returns:
+            None.
+        """
+        calls.append("run")
+
+    monkeypatch.setattr(cli, "run_mcp_server", fake_run_mcp_server)
+
+    result = runner.invoke(app, ["mcp"])
+
+    assert result.exit_code == 0
+    assert calls == ["run"]
+
+
 def test_add_command_creates_note_with_repeated_tags(tmp_path, monkeypatch) -> None:
     """Verify add creates a note with field and repeated tag options.
 

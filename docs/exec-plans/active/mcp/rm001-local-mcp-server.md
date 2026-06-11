@@ -22,7 +22,7 @@
 
 ### Task #1: 引入 MCP SDK 依赖
 
-**Status:** Designed
+**Status:** Finished
 
 **Files:** Modify `pyproject.toml`; Modify `uv.lock`
 
@@ -34,7 +34,7 @@
 
 ### Task #2: 实现 direct-only repository 打开函数
 
-**Status:** Designed
+**Status:** Finished
 
 **Files:** Create `src/zembra_cli/mcp_server.py`; Modify `tests/test_mcp_server.py`
 
@@ -48,7 +48,7 @@
 
 ### Task #3: 构建 MCP Server 与 tool 注册
 
-**Status:** Designed
+**Status:** Finished
 
 **Files:** Modify `src/zembra_cli/mcp_server.py`; Create/Modify `tests/test_mcp_server.py`
 
@@ -60,7 +60,7 @@
 
 ### Task #4: 增加 `zembra-cli mcp` 启动入口
 
-**Status:** Designed
+**Status:** Finished
 
 **Files:** Modify `src/zembra_cli/cli.py`; Modify `tests/test_cli.py`
 
@@ -74,7 +74,7 @@
 
 ### Task #5: 补充 MCP 使用说明
 
-**Status:** Designed
+**Status:** Finished
 
 **Files:** Modify `README.md`
 
@@ -86,7 +86,7 @@
 
 ### Task #6: 回归验证与计划状态回写
 
-**Status:** Designed
+**Status:** Finished
 
 **Files:** Verify full repository; Modify `docs/exec-plans/active/mcp/rm001-local-mcp-server.md`
 
@@ -95,3 +95,12 @@
 **Implementation Notes:** 执行 `uv run pytest tests/test_mcp_server.py -q`、`uv run pytest tests/test_cli.py -q`、`uv run pytest -q`、`uv run ruff check .`。每个 Stage 完成后按仓库规则提交一次原子 commit，commit message 必须符合 Conventional Commits。
 
 **Expected Verification Result:** 所有测试和 lint 通过，执行计划记录实际验证结果。
+
+## 验证记录
+
+- 2026.06.11：`uv run python -c "import mcp; print(mcp.__file__)"`，成功导入 MCP SDK。
+- 2026.06.11：`uv run pytest tests/test_mcp_server.py -q`，8 passed。
+- 2026.06.11：`uv run pytest tests/test_cli.py -q`，49 passed。
+- 2026.06.11：`uv run pytest -q`，131 passed。
+- 2026.06.11：`uv run ruff check .`，All checks passed。
+- 2026.06.11：`uv run zembra-cli --help`，`mcp` 命令出现在命令列表中。
