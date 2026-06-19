@@ -4,16 +4,24 @@
 
 ## Install
 
-This project uses Python 3.12 and `uv`.
+`zembra-cli` is a standard Python package. It requires Python 3.12 or newer.
+
+Install it as an isolated command-line tool:
 
 ```bash
-uv sync
+pipx install zembra-cli
 ```
 
-Run the CLI from the repository:
+Or install it into the current Python environment:
 
 ```bash
-uv run zembra-cli --help
+python -m pip install zembra-cli
+```
+
+Check the installed command:
+
+```bash
+zembra-cli --help
 ```
 
 ## Initialize Local Storage
@@ -21,13 +29,13 @@ uv run zembra-cli --help
 For local direct mode, initialize a SQLite database and write the shared Zembra config file:
 
 ```bash
-uv run zembra-cli init
+zembra-cli init
 ```
 
 Use a custom database path when needed:
 
 ```bash
-uv run zembra-cli init --database /path/to/zembra.sqlite3
+zembra-cli init --database /path/to/zembra.sqlite3
 ```
 
 The default config file is `~/.zembra.env`.
@@ -37,34 +45,34 @@ The default config file is `~/.zembra.env`.
 Create a note:
 
 ```bash
-uv run zembra-cli add "Remember to review the sync plan" --field Inbox --tags cli,review
+zembra-cli add "Remember to review the sync plan" --field Inbox --tags cli,review
 ```
 
 Create an Agent-authored note:
 
 ```bash
-uv run zembra-cli add "Drafted by an agent" --field Inbox --role Agent
+zembra-cli add "Drafted by an agent" --field Inbox --role Agent
 ```
 
 Start the interactive capture session:
 
 ```bash
-uv run zembra-cli run
+zembra-cli run
 ```
 
 List taxonomy values:
 
 ```bash
-uv run zembra-cli list tags --all
-uv run zembra-cli list fields --all
+zembra-cli list tags --all
+zembra-cli list fields --all
 ```
 
 Show random notes:
 
 ```bash
-uv run zembra-cli random notes
-uv run zembra-cli random tags
-uv run zembra-cli random fields
+zembra-cli random notes
+zembra-cli random tags
+zembra-cli random fields
 ```
 
 Add `--json` to random commands when structured output is needed.
@@ -86,7 +94,7 @@ The same user-facing commands are used in both direct and HTTP mode.
 Start the local stdio MCP server:
 
 ```bash
-uv run zembra-cli mcp
+zembra-cli mcp
 ```
 
 The MCP server uses direct SQLite mode and talks to the local database without starting an HTTP backend.
@@ -100,6 +108,20 @@ Available tools:
 - `random_notes`
 
 ## Development
+
+This repository uses `uv` for local development.
+
+Install development dependencies:
+
+```bash
+uv sync
+```
+
+Run the CLI from the repository:
+
+```bash
+uv run zembra-cli --help
+```
 
 Run tests:
 
