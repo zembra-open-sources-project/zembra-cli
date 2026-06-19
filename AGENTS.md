@@ -15,12 +15,6 @@
 7. Markdown 自然段必须保持为连续段落，禁止为了控制行宽、适配编辑器显示或套用代码格式化习惯而在段落内部插入硬换行；只有列表、表格、代码块、引用块或语义上确实需要换行的内容可以换行。
 8. Bugfix 可采用轻量流程：当用户明确标记为 bugfix，且修复范围清晰、无需多轮产品决策时，可将需求澄清、问题分析、设计方案、开发计划与验收记录合并写入 `docs/bugfix/` 下单个文件。该文件仍需包含需求编号、影响范围、根因判断、改动范围和验证结果；完成用户验收后，在 `docs/PROGRESS.md` 记录同一编号。
 
-### 初始化规则
-- 初始化命令只创建缺失目录和文件。
-- 已存在目录和文件必须 SKIP，禁止覆盖、删除、重命名或改写已有内容。
-- 初始化输出只报告新建和跳过的目录/文件，不输出项目业务内容。
-- 初始化只建立持续开发工作流骨架，不执行具体需求开发。
-
 ### 文档系统说明
 - AGENTS.md 记录全局工作流、文档阅读顺序、产物落点、禁止事项和关键入口。
 - ARCHITECTURE.md 描述系统全局结构、模块边界、依赖方向和不变量。
@@ -87,10 +81,3 @@
 - 子目录 AGENTS.md 只能补充或收紧当前目录及其子树的局部规则。
 - 子目录 AGENTS.md 不能覆盖、放宽或删除根 AGENTS.md 中的全局安全规则。
 - 规则冲突时，以更严格的安全规则为准。
-
-## Git 安全规则
-
-- commit message 必须遵守 Conventional Commits：feat、fix、docs、style、refactor、perf、test、build、ci、chore、revert。
-- 除非用户提示，否则禁止使用 git commit --amend。
-- git 操作必须串行执行，避免并发 git add、commit、merge、rebase、checkout、switch。
-- 执行 git checkout、git switch 或任何会改变当前分支的操作前，必须先运行 git worktree list，并确认当前 worktree 归属和目标分支占用情况。
