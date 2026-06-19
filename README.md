@@ -1,8 +1,6 @@
 # zembra-cli
 
-`zembra-cli` is the command-line client for Zembra, a local-first note system. It
-can create notes, browse existing fields and tags, run an interactive capture
-session, and expose the local note database to MCP clients.
+`zembra-cli` is the command-line client for Zembra, a local-first note system. It can create notes, browse existing fields and tags, run an interactive capture session, and expose the local note database to MCP clients.
 
 ## Install
 
@@ -20,8 +18,7 @@ uv run zembra-cli --help
 
 ## Initialize Local Storage
 
-For local direct mode, initialize a SQLite database and write the shared Zembra
-config file:
+For local direct mode, initialize a SQLite database and write the shared Zembra config file:
 
 ```bash
 uv run zembra-cli init
@@ -74,8 +71,7 @@ Add `--json` to random commands when structured output is needed.
 
 ## HTTP Mode
 
-`zembra-cli` can also connect to a Zembra HTTP backend. Configure `~/.zembra.env`
-with HTTP mode:
+`zembra-cli` can also connect to a Zembra HTTP backend. Configure `~/.zembra.env` with HTTP mode:
 
 ```toml
 [cli]
@@ -93,8 +89,7 @@ Start the local stdio MCP server:
 uv run zembra-cli mcp
 ```
 
-The MCP server uses direct SQLite mode and talks to the local database without
-starting an HTTP backend.
+The MCP server uses direct SQLite mode and talks to the local database without starting an HTTP backend.
 
 Available tools:
 
@@ -118,9 +113,7 @@ Run lint checks:
 uv run ruff check .
 ```
 
-The shared data contract lives in the `vendor/zembra-schema` submodule. After a
-fresh clone, initialize submodules before working with schema-backed database
-features:
+The shared data contract lives in the `vendor/zembra-schema` submodule. After a fresh clone, initialize submodules before working with schema-backed database features:
 
 ```bash
 git submodule update --init --recursive
