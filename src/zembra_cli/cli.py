@@ -414,7 +414,9 @@ def open_cli_repository() -> Iterator[tuple[CliRepository, str]]:
     if config.cli_mode == "http":
         if config.http_base_url is None:
             fail_command("HTTP backend URL is missing in the zembra config.")
-        repository = HttpZembraRepository(config.http_base_url)
+        if config.workspace_id is None:
+            fail_command("Workspace ID is missing in the zembra CLI config. Run: zembra-cli init")
+        repository = HttpZembraRepository(config.http_base_url, workspace_id=config.workspace_id)
         try:
             yield repository, config.http_base_url
         finally:

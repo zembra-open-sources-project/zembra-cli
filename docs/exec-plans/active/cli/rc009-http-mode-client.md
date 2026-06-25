@@ -125,3 +125,7 @@
 2026.05.03：已运行 `uv run ruff check .`，检查通过。
 
 2026.05.03：已使用 `HttpZembraRepository("http://127.0.0.1:3000")` 对本地后端执行只读验证，成功读取 tags、fields、notes，数量分别为 4、3、7。
+
+2026.06.25：根据本地后端 `http://127.0.0.1:3000/api-docs/openapi.json` 更新 HTTP 模式请求，`/notes`、`/random/*` 和 `/notes/{note_ref}/tags` 请求统一携带 `workspace_id` query 参数，HTTP 模式配置要求提供 `[workspace].id`，不保留旧接口兼容。
+
+2026.06.25：已运行 `uv run pytest`，全部 145 个测试通过；已运行 `uv run ruff check .`，检查通过；已使用 workspace `00000000-0000-4000-8000-000000000300` 对本地后端执行只读验证，成功读取 notes、fields、tags 和 random notes，数量分别为 19、4、11、1。

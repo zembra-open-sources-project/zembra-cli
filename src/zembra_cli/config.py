@@ -178,7 +178,7 @@ class ZembraConfig:
         cli_mode: CLI connection mode.
         database_path: SQLite database path configured for direct mode.
         http_base_url: Backend base URL configured for HTTP mode.
-        workspace_id: CLI direct-mode workspace identifier.
+        workspace_id: CLI workspace identifier.
         workspace_name: Optional CLI direct-mode workspace display name.
     """
 
@@ -420,7 +420,13 @@ def _config_from_data(data: dict[str, Any]) -> ZembraConfig:
         raw_http_base_url = cli_section.get("http_base_url")
         if not isinstance(raw_http_base_url, str) or not raw_http_base_url.strip():
             raise ConfigHttpBaseUrlMissingError()
-        return ZembraConfig(cli_mode="http", http_base_url=raw_http_base_url.strip())
+        workspace_id, workspace_name = _workspace_config_from_data(data)
+        return ZembraConfig(
+            cli_mode="http",
+            http_base_url=raw_http_base_url.strip(),
+            workspace_id=workspace_id,
+            workspace_name=workspace_name,
+        )
 
     database_section = data.get("database")
     if not isinstance(database_section, dict):
@@ -430,6 +436,25 @@ def _config_from_data(data: dict[str, Any]) -> ZembraConfig:
     if not isinstance(raw_database_path, str) or not raw_database_path.strip():
         raise ConfigDatabasePathMissingError()
 
+    workspace_id, workspace_name = _workspace_config_from_data(data)
+
+    return ZembraConfig(
+        cli_mode="direct",
+        database_path=Path(raw_database_path).expanduser(),
+        workspace_id=workspace_id,
+        workspace_name=workspace_name,
+    )
+
+
+def _workspace_config_from_data(data: dict[str, Any]) -> tuple[str, str | None]:
+    """Read workspace configuration from decoded TOML data.
+
+    Args:
+        data: Decoded TOML object.
+
+    Returns:
+        Workspace identifier and optional display name.
+    """
     workspace_section = data.get("workspace")
     if not isinstance(workspace_section, dict):
         raise ConfigWorkspaceIdMissingError()
@@ -441,12 +466,7 @@ def _config_from_data(data: dict[str, Any]) -> ZembraConfig:
     raw_workspace_name = workspace_section.get("name")
     workspace_name = raw_workspace_name.strip() if isinstance(raw_workspace_name, str) else None
 
-    return ZembraConfig(
-        cli_mode="direct",
-        database_path=Path(raw_database_path).expanduser(),
-        workspace_id=raw_workspace_id.strip(),
-        workspace_name=workspace_name,
-    )
+    return raw_workspace_id.strip(), workspace_name
 
 
 def _dump_toml(data: dict[str, Any]) -> str:

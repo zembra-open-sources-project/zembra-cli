@@ -70,7 +70,8 @@ def configure_cli_http(monkeypatch, tmp_path, base_url: str = "http://backend.te
     config_path = tmp_path / ".zembra" / "config.cli.toml"
     config_path.parent.mkdir(parents=True, exist_ok=True)
     config_path.write_text(
-        f'[cli]\nmode = "http"\nhttp_base_url = "{base_url}"\n',
+        f'[cli]\nmode = "http"\nhttp_base_url = "{base_url}"\n\n'
+        f'[workspace]\nid = "{TEST_WORKSPACE_ID}"\n',
         encoding="utf-8",
     )
     monkeypatch.setattr(cli, "default_cli_config_path", lambda: config_path)
@@ -177,22 +178,25 @@ class FakeHttpRepository:
 
     Attributes:
         base_url: Backend URL passed by the CLI.
+        workspace_id: Workspace ID passed by the CLI.
         created_payloads: Captured create_note calls.
     """
 
     instances: list["FakeHttpRepository"] = []
     random_note_requests: list[int] = []
 
-    def __init__(self, base_url: str) -> None:
+    def __init__(self, base_url: str, workspace_id: str) -> None:
         """Initialize the fake repository.
 
         Args:
             base_url: Backend URL passed by the CLI.
+            workspace_id: Workspace ID passed by the CLI.
 
         Returns:
             None.
         """
         self.base_url = base_url
+        self.workspace_id = workspace_id
         self.created_payloads: list[dict] = []
         FakeHttpRepository.instances.append(self)
 

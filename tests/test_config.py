@@ -74,13 +74,18 @@ def test_load_cascading_config_reads_http_mode(tmp_path) -> None:
     """
     config_path = tmp_path / ".zembra.env"
     config_path.write_text(
-        '[cli]\nmode = "http"\nhttp_base_url = "http://127.0.0.1:3000"\n',
+        '[cli]\nmode = "http"\nhttp_base_url = "http://127.0.0.1:3000"\n\n'
+        '[workspace]\nid = "550e8400-e29b-41d4-a716-446655440000"\n',
         encoding="utf-8",
     )
 
     config = load_cascading_config(config_path, tmp_path / "missing.env")
 
-    assert config == ZembraConfig(cli_mode="http", http_base_url="http://127.0.0.1:3000")
+    assert config == ZembraConfig(
+        cli_mode="http",
+        http_base_url="http://127.0.0.1:3000",
+        workspace_id="550e8400-e29b-41d4-a716-446655440000",
+    )
 
 
 def test_load_cascading_config_reads_cli_config_first(tmp_path) -> None:
@@ -205,7 +210,10 @@ def test_load_cascading_config_merges_missing_http_base_url_from_global(tmp_path
     cli_config_path = tmp_path / ".zembra" / "config.cli.toml"
     global_config_path = tmp_path / ".zembra.env"
     cli_config_path.parent.mkdir()
-    cli_config_path.write_text('[cli]\nmode = "http"\n', encoding="utf-8")
+    cli_config_path.write_text(
+        '[cli]\nmode = "http"\n\n[workspace]\nid = "550e8400-e29b-41d4-a716-446655440000"\n',
+        encoding="utf-8",
+    )
     global_config_path.write_text(
         '[cli]\nhttp_base_url = "http://global.test"\n',
         encoding="utf-8",
@@ -213,7 +221,11 @@ def test_load_cascading_config_merges_missing_http_base_url_from_global(tmp_path
 
     config = load_cascading_config(cli_config_path, global_config_path)
 
-    assert config == ZembraConfig(cli_mode="http", http_base_url="http://global.test")
+    assert config == ZembraConfig(
+        cli_mode="http",
+        http_base_url="http://global.test",
+        workspace_id="550e8400-e29b-41d4-a716-446655440000",
+    )
 
 
 def test_load_cascading_config_reports_checked_paths(tmp_path) -> None:
@@ -311,6 +323,25 @@ def test_load_cascading_config_reports_missing_http_base_url(tmp_path) -> None:
     config_path.write_text('[cli]\nmode = "http"\n', encoding="utf-8")
 
     with pytest.raises(ConfigHttpBaseUrlMissingError, match="HTTP backend URL is missing"):
+        load_cascading_config(config_path, tmp_path / "missing.env")
+
+
+def test_load_cascading_config_reports_missing_http_workspace_id(tmp_path) -> None:
+    """Verify HTTP mode requires workspace.id.
+
+    Args:
+        tmp_path: Pytest temporary directory fixture.
+
+    Returns:
+        None.
+    """
+    config_path = tmp_path / ".zembra.env"
+    config_path.write_text(
+        '[cli]\nmode = "http"\nhttp_base_url = "http://127.0.0.1:3000"\n',
+        encoding="utf-8",
+    )
+
+    with pytest.raises(ConfigWorkspaceIdMissingError, match="Workspace ID is missing"):
         load_cascading_config(config_path, tmp_path / "missing.env")
 
 

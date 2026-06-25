@@ -25,6 +25,22 @@ def make_client(handler) -> httpx.Client:
     )
 
 
+def make_repository(handler) -> HttpZembraRepository:
+    """Create a workspace-scoped HTTP repository backed by a mock transport.
+
+    Args:
+        handler: Callable that maps requests to responses.
+
+    Returns:
+        Configured HTTP repository.
+    """
+    return HttpZembraRepository(
+        "http://backend.test",
+        workspace_id=TEST_WORKSPACE_ID,
+        client=make_client(handler),
+    )
+
+
 def note_payload(content: str = "hello", note_id: str = "abcd0000000000000000000000000000") -> dict:
     """Create a valid note response object.
 
@@ -106,10 +122,11 @@ def test_http_repository_create_note_sends_payload_and_parses_note() -> None:
             Mock HTTP response.
         """
         nonlocal captured_payload
+        assert request.url.params["workspace_id"] == TEST_WORKSPACE_ID
         captured_payload = json.loads(request.content)
         return httpx.Response(201, json={"note": note_payload("hello"), "metadata": {}})
 
-    repository = HttpZembraRepository("http://backend.test", client=make_client(handler))
+    repository = make_repository(handler)
 
     note = repository.create_note(
         "hello",
@@ -166,7 +183,7 @@ def test_http_repository_lists_tags_and_fields() -> None:
             },
         )
 
-    repository = HttpZembraRepository("http://backend.test", client=make_client(handler))
+    repository = make_repository(handler)
 
     assert [tag.name for tag in repository.list_tags()] == ["cli"]
     assert [field.name for field in repository.list_fields()] == ["work"]
@@ -182,20 +199,52 @@ def test_http_repository_lists_notes() -> None:
         None.
     """
 
-    def handler(_request: httpx.Request) -> httpx.Response:
+    def handler(request: httpx.Request) -> httpx.Response:
         """Return a notes response.
 
         Args:
-            _request: Captured HTTP request.
+            request: Captured HTTP request.
 
         Returns:
             Mock HTTP response.
         """
+        assert request.url.params["workspace_id"] == TEST_WORKSPACE_ID
         return httpx.Response(200, json={"notes": [note_payload("saved")]})
 
-    repository = HttpZembraRepository("http://backend.test", client=make_client(handler))
+    repository = make_repository(handler)
 
     assert [note.content for note in repository.list_notes()] == ["saved"]
+
+
+def test_http_repository_adds_workspace_id_to_backend_records() -> None:
+    """Verify backend records inherit the configured workspace when omitted.
+
+    Args:
+        None.
+
+    Returns:
+        None.
+    """
+
+    def handler(request: httpx.Request) -> httpx.Response:
+        """Return current backend-shaped records without workspace_id.
+
+        Args:
+            request: Captured HTTP request.
+
+        Returns:
+            Mock HTTP response.
+        """
+        note = note_payload("saved")
+        note.pop("workspace_id")
+        assert request.url.params["workspace_id"] == TEST_WORKSPACE_ID
+        return httpx.Response(200, json={"notes": [note]})
+
+    repository = make_repository(handler)
+
+    notes = repository.list_notes()
+
+    assert notes[0].workspace_id == TEST_WORKSPACE_ID
 
 
 def test_http_repository_random_notes_enriches_metadata() -> None:
@@ -236,11 +285,11 @@ def test_http_repository_random_notes_enriches_metadata() -> None:
             )
         return httpx.Response(404, json={"error": {"message": "missing", "code": "missing"}})
 
-    repository = HttpZembraRepository("http://backend.test", client=make_client(handler))
+    repository = make_repository(handler)
 
     notes = repository.random_notes(3)
 
-    assert paths[0] == "http://backend.test/random/notes?n=3"
+    assert paths[0] == f"http://backend.test/random/notes?workspace_id={TEST_WORKSPACE_ID}&n=3"
     assert notes[0].note.content == "full content"
     assert notes[0].field is not None
     assert notes[0].field.name == "work"
@@ -267,6 +316,7 @@ def test_http_repository_random_tagged_notes_parses_groups() -> None:
             Mock HTTP response.
         """
         if request.url.path == "/random/tags":
+            assert request.url.params["workspace_id"] == TEST_WORKSPACE_ID
             assert request.url.params["n"] == "2"
             assert request.url.params["count"] == "5"
             return httpx.Response(
@@ -289,13 +339,14 @@ def test_http_repository_random_tagged_notes_parses_groups() -> None:
                 },
             )
         if request.url.path == "/notes/abcd0000000000000000000000000000/tags":
+            assert request.url.params["workspace_id"] == TEST_WORKSPACE_ID
             return httpx.Response(
                 200,
                 json={"tags": [tag_payload()]},
             )
         return httpx.Response(404, json={"error": {"message": "missing", "code": "missing"}})
 
-    repository = HttpZembraRepository("http://backend.test", client=make_client(handler))
+    repository = make_repository(handler)
 
     groups = repository.random_tagged_notes(2, 5)
 
@@ -326,6 +377,7 @@ def test_http_repository_random_field_notes_parses_groups() -> None:
             Mock HTTP response.
         """
         if request.url.path == "/random/fields":
+            assert request.url.params["workspace_id"] == TEST_WORKSPACE_ID
             assert request.url.params["n"] == "2"
             assert request.url.params["count"] == "5"
             return httpx.Response(
@@ -345,7 +397,7 @@ def test_http_repository_random_field_notes_parses_groups() -> None:
             return httpx.Response(200, json={"tags": []})
         return httpx.Response(404, json={"error": {"message": "missing", "code": "missing"}})
 
-    repository = HttpZembraRepository("http://backend.test", client=make_client(handler))
+    repository = make_repository(handler)
 
     groups = repository.random_field_notes(2, 5)
 
@@ -379,7 +431,7 @@ def test_http_repository_raises_structured_error_message() -> None:
             json={"error": {"code": "validation_error", "message": "Request validation failed."}},
         )
 
-    repository = HttpZembraRepository("http://backend.test", client=make_client(handler))
+    repository = make_repository(handler)
 
     with pytest.raises(ZembraHttpClientError, match="Request validation failed"):
         repository.create_note("")
@@ -406,7 +458,7 @@ def test_http_repository_rejects_invalid_response_shape() -> None:
         """
         return httpx.Response(200, json={"names": []})
 
-    repository = HttpZembraRepository("http://backend.test", client=make_client(handler))
+    repository = make_repository(handler)
 
     with pytest.raises(ZembraHttpClientError, match='missing "tags"'):
         repository.list_tags()

@@ -44,6 +44,7 @@ class HttpZembraRepository:
     def __init__(
         self,
         base_url: str,
+        workspace_id: str,
         client: httpx.Client | None = None,
         timeout: float = DEFAULT_HTTP_TIMEOUT_SECONDS,
     ) -> None:
@@ -51,6 +52,7 @@ class HttpZembraRepository:
 
         Args:
             base_url: Backend base URL such as ``http://127.0.0.1:3000``.
+            workspace_id: Workspace identifier used to scope backend CRUD requests.
             client: Optional preconfigured httpx client for tests.
             timeout: Request timeout in seconds when creating the default client.
 
@@ -61,7 +63,10 @@ class HttpZembraRepository:
         parsed_base_url = httpx.URL(normalized_base_url)
         if not normalized_base_url or parsed_base_url.scheme not in {"http", "https"}:
             raise ZembraHttpClientError("Zembra backend URL must start with http:// or https://.")
+        if not workspace_id.strip():
+            raise ZembraHttpClientError("Zembra workspace ID is required for HTTP mode.")
 
+        self.workspace_id = workspace_id.strip()
         self._owns_client = client is None
         self._client = client or httpx.Client(
             base_url=normalized_base_url,
@@ -129,7 +134,7 @@ class HttpZembraRepository:
             "tags": list(tag_names or ()),
             "device_id": device_id,
         }
-        data = self._request_json("POST", "/notes", json=payload)
+        data = self._request_json("POST", "/notes", params=self._workspace_params(), json=payload)
         note_data = self._require_key(data, "note")
         return self._parse_model(note_data, NoteRecord, "note")
 
@@ -169,7 +174,7 @@ class HttpZembraRepository:
         Returns:
             Ordered note records.
         """
-        data = self._request_json("GET", "/notes")
+        data = self._request_json("GET", "/notes", params=self._workspace_params())
         notes_data = self._require_key(data, "notes")
         return self._parse_model_list(notes_data, NoteRecord, "notes")
 
@@ -182,7 +187,11 @@ class HttpZembraRepository:
         Returns:
             Random visible note records with field and tag metadata.
         """
-        data = self._request_json("GET", "/random/notes", params={"n": number})
+        data = self._request_json(
+            "GET",
+            "/random/notes",
+            params=self._workspace_params(n=number),
+        )
         notes_data = self._require_key(data, "notes")
         notes = self._parse_model_list(notes_data, NoteRecord, "notes")
         return self._notes_with_metadata(notes)
@@ -200,7 +209,7 @@ class HttpZembraRepository:
         data = self._request_json(
             "GET",
             "/random/tags",
-            params={"n": number, "count": count},
+            params=self._workspace_params(n=number, count=count),
         )
         groups_data = self._require_key(data, "tagged_notes")
         if not isinstance(groups_data, list):
@@ -237,7 +246,7 @@ class HttpZembraRepository:
         data = self._request_json(
             "GET",
             "/random/fields",
-            params={"n": number, "count": count},
+            params=self._workspace_params(n=number, count=count),
         )
         groups_data = self._require_key(data, "field_notes")
         if not isinstance(groups_data, list):
@@ -379,9 +388,24 @@ class HttpZembraRepository:
         Returns:
             Tag records associated with the note.
         """
-        data = self._request_json("GET", f"/notes/{note_ref}/tags")
+        data = self._request_json(
+            "GET",
+            f"/notes/{note_ref}/tags",
+            params=self._workspace_params(),
+        )
         tags_data = self._require_key(data, "tags")
         return self._parse_model_list(tags_data, TagRecord, "tags")
+
+    def _workspace_params(self, **extra_params: object) -> dict[str, object]:
+        """Build query parameters for workspace-scoped backend endpoints.
+
+        Args:
+            **extra_params: Additional query parameters for the endpoint.
+
+        Returns:
+            Query parameters including the configured workspace identifier.
+        """
+        return {"workspace_id": self.workspace_id, **extra_params}
 
     def _parse_model(
         self,
@@ -399,12 +423,33 @@ class HttpZembraRepository:
         Returns:
             Parsed model instance.
         """
+        normalized_data = self._model_data_with_workspace_id(data, model_type)
         try:
-            return model_type.model_validate(data)
+            return model_type.model_validate(normalized_data)
         except ValidationError as error:
             raise ZembraHttpClientError(
                 f'Zembra backend returned invalid "{name}" data.'
             ) from error
+
+    def _model_data_with_workspace_id(
+        self,
+        data: Any,
+        model_type: type[FieldRecord | NoteRecord | TagRecord],
+    ) -> Any:
+        """Add repository workspace context to backend record data when omitted.
+
+        Args:
+            data: Decoded backend record data.
+            model_type: Pydantic model class that will parse the record.
+
+        Returns:
+            Record data with ``workspace_id`` available for local CLI models.
+        """
+        if model_type not in {FieldRecord, NoteRecord, TagRecord}:
+            return data
+        if not isinstance(data, dict) or "workspace_id" in data:
+            return data
+        return {**data, "workspace_id": self.workspace_id}
 
     def _parse_model_list(
         self,

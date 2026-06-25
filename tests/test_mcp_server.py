@@ -170,7 +170,8 @@ def test_mcp_tools_reject_http_mode_config(tmp_path) -> None:
     """
     config_path = tmp_path / ".zembra.env"
     config_path.write_text(
-        '[cli]\nmode = "http"\nhttp_base_url = "http://127.0.0.1:3000"\n',
+        '[cli]\nmode = "http"\nhttp_base_url = "http://127.0.0.1:3000"\n\n'
+        '[workspace]\nid = "550e8400-e29b-41d4-a716-446655440000"\n',
         encoding="utf-8",
     )
 
