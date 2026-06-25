@@ -38,7 +38,7 @@ Use a custom database path when needed:
 zembra-cli init --database /path/to/zembra.sqlite3
 ```
 
-The default config file is `~/.zembra.env`.
+The default CLI config file is `~/.zembra/config.cli.toml`. Existing `~/.zembra.env` files are still read as a lower-priority fallback when a field is missing from the CLI config.
 
 ## Basic Usage
 
@@ -79,7 +79,7 @@ Add `--json` to random commands when structured output is needed.
 
 ## HTTP Mode
 
-`zembra-cli` can also connect to a Zembra HTTP backend. Configure `~/.zembra.env` with HTTP mode:
+`zembra-cli` can also connect to a Zembra HTTP backend. Configure `~/.zembra/config.cli.toml` with HTTP mode:
 
 ```toml
 [cli]

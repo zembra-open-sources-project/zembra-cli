@@ -12,7 +12,13 @@ from rich.console import Console
 from rich.markdown import Markdown
 
 from zembra_cli import __version__
-from zembra_cli.config import ConfigError, default_config_path, load_config, write_database_path
+from zembra_cli.config import (
+    ConfigError,
+    default_cli_config_path,
+    default_global_config_path,
+    load_cascading_config,
+    write_database_path,
+)
 from zembra_cli.database import (
     DEFAULT_DATABASE_PATH,
     DatabaseInitializationError,
@@ -372,7 +378,7 @@ def open_cli_repository() -> Iterator[tuple[CliRepository, str]]:
         A context manager yielding the repository and a human-readable location.
     """
     try:
-        config = load_config(default_config_path())
+        config = load_cascading_config(default_cli_config_path(), default_global_config_path())
     except ConfigError as error:
         fail_command(error.message)
 
@@ -483,11 +489,12 @@ def init(
         None. The command prints initialization status or exits on failure.
     """
     resolved_database_path = database_path if database_path is not None else DEFAULT_DATABASE_PATH
-    config_path = default_config_path()
+    config_path = default_cli_config_path()
     config_status = "updated" if config_path.exists() else "created"
 
     try:
         database_result = initialize_database_file(resolved_database_path)
+        config_path.parent.mkdir(parents=True, exist_ok=True)
         config = write_database_path(
             database_result.database_path,
             config_path,
@@ -523,7 +530,9 @@ def database(
         None. The command prints a success message or exits on failure.
     """
     try:
-        config = write_database_path(file_path, default_config_path())
+        config_path = default_cli_config_path()
+        config_path.parent.mkdir(parents=True, exist_ok=True)
+        config = write_database_path(file_path, config_path)
     except ConfigError as error:
         fail_command(error.message)
 

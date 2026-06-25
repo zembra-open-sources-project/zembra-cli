@@ -10,7 +10,7 @@ from typer.testing import CliRunner
 
 from zembra_cli import __version__, cli
 from zembra_cli.cli import app
-from zembra_cli.config import load_config
+from zembra_cli.config import load_cascading_config
 from zembra_cli.database import database_connection, initialize_database, missing_core_tables
 from zembra_cli.models import (
     FieldNotesGroup,
@@ -42,12 +42,36 @@ def configure_cli_database(monkeypatch, tmp_path, database_path) -> Path:
     Returns:
         The temporary config path.
     """
-    config_path = tmp_path / ".zembra.env"
+    config_path = tmp_path / ".zembra" / "config.cli.toml"
+    config_path.parent.mkdir(parents=True, exist_ok=True)
     config_path.write_text(
         f'[cli]\nmode = "direct"\n\n[database]\npath = "{database_path}"\n',
         encoding="utf-8",
     )
-    monkeypatch.setattr(cli, "default_config_path", lambda: config_path)
+    monkeypatch.setattr(cli, "default_cli_config_path", lambda: config_path)
+    monkeypatch.setattr(cli, "default_global_config_path", lambda: tmp_path / ".zembra.env")
+    return config_path
+
+
+def configure_cli_http(monkeypatch, tmp_path, base_url: str = "http://backend.test") -> Path:
+    """Point CLI commands at a test HTTP config.
+
+    Args:
+        monkeypatch: Pytest monkeypatch fixture.
+        tmp_path: Pytest temporary directory fixture.
+        base_url: Temporary backend URL used by the CLI.
+
+    Returns:
+        The temporary CLI config path.
+    """
+    config_path = tmp_path / ".zembra" / "config.cli.toml"
+    config_path.parent.mkdir(parents=True, exist_ok=True)
+    config_path.write_text(
+        f'[cli]\nmode = "http"\nhttp_base_url = "{base_url}"\n',
+        encoding="utf-8",
+    )
+    monkeypatch.setattr(cli, "default_cli_config_path", lambda: config_path)
+    monkeypatch.setattr(cli, "default_global_config_path", lambda: tmp_path / ".zembra.env")
     return config_path
 
 
@@ -768,12 +792,7 @@ def test_random_notes_uses_http_mode_from_cli_config(tmp_path, monkeypatch) -> N
     """
     FakeHttpRepository.instances = []
     FakeHttpRepository.random_note_requests = []
-    config_path = tmp_path / ".zembra.env"
-    config_path.write_text(
-        '[cli]\nmode = "http"\nhttp_base_url = "http://backend.test"\n',
-        encoding="utf-8",
-    )
-    monkeypatch.setattr(cli, "default_config_path", lambda: config_path)
+    configure_cli_http(monkeypatch, tmp_path)
     monkeypatch.setattr(cli, "HttpZembraRepository", FakeHttpRepository)
 
     result = runner.invoke(app, ["random", "notes", "-n", "3", "--json"])
@@ -798,12 +817,7 @@ def test_random_notes_uses_json_default_count_for_http_mode(tmp_path, monkeypatc
     """
     FakeHttpRepository.instances = []
     FakeHttpRepository.random_note_requests = []
-    config_path = tmp_path / ".zembra.env"
-    config_path.write_text(
-        '[cli]\nmode = "http"\nhttp_base_url = "http://backend.test"\n',
-        encoding="utf-8",
-    )
-    monkeypatch.setattr(cli, "default_config_path", lambda: config_path)
+    configure_cli_http(monkeypatch, tmp_path)
     monkeypatch.setattr(cli, "HttpZembraRepository", FakeHttpRepository)
 
     result = runner.invoke(app, ["random", "notes", "--json"])
@@ -824,12 +838,7 @@ def test_random_notes_uses_human_default_count_for_http_mode(tmp_path, monkeypat
     """
     FakeHttpRepository.instances = []
     FakeHttpRepository.random_note_requests = []
-    config_path = tmp_path / ".zembra.env"
-    config_path.write_text(
-        '[cli]\nmode = "http"\nhttp_base_url = "http://backend.test"\n',
-        encoding="utf-8",
-    )
-    monkeypatch.setattr(cli, "default_config_path", lambda: config_path)
+    configure_cli_http(monkeypatch, tmp_path)
     monkeypatch.setattr(cli, "HttpZembraRepository", FakeHttpRepository)
 
     result = runner.invoke(app, ["random", "notes"])
@@ -849,12 +858,7 @@ def test_add_command_uses_http_mode_from_cli_config(tmp_path, monkeypatch) -> No
         None.
     """
     FakeHttpRepository.instances = []
-    config_path = tmp_path / ".zembra.env"
-    config_path.write_text(
-        '[cli]\nmode = "http"\nhttp_base_url = "http://backend.test"\n',
-        encoding="utf-8",
-    )
-    monkeypatch.setattr(cli, "default_config_path", lambda: config_path)
+    configure_cli_http(monkeypatch, tmp_path)
     monkeypatch.setattr(cli, "HttpZembraRepository", FakeHttpRepository)
 
     result = runner.invoke(
@@ -889,12 +893,7 @@ def test_list_tags_uses_http_mode_from_cli_config(tmp_path, monkeypatch) -> None
         None.
     """
     FakeHttpRepository.instances = []
-    config_path = tmp_path / ".zembra.env"
-    config_path.write_text(
-        '[cli]\nmode = "http"\nhttp_base_url = "http://backend.test"\n',
-        encoding="utf-8",
-    )
-    monkeypatch.setattr(cli, "default_config_path", lambda: config_path)
+    configure_cli_http(monkeypatch, tmp_path)
     monkeypatch.setattr(cli, "HttpZembraRepository", FakeHttpRepository)
 
     result = runner.invoke(app, ["list", "tags"])
@@ -914,10 +913,12 @@ def test_add_command_rejects_config_without_cli_mode(tmp_path, monkeypatch) -> N
     Returns:
         None.
     """
-    config_path = tmp_path / ".zembra.env"
+    config_path = tmp_path / ".zembra" / "config.cli.toml"
     database_path = tmp_path / "zembra.sqlite3"
+    config_path.parent.mkdir(parents=True)
     config_path.write_text(f'[database]\npath = "{database_path}"\n', encoding="utf-8")
-    monkeypatch.setattr(cli, "default_config_path", lambda: config_path)
+    monkeypatch.setattr(cli, "default_cli_config_path", lambda: config_path)
+    monkeypatch.setattr(cli, "default_global_config_path", lambda: tmp_path / ".zembra.env")
 
     result = runner.invoke(app, ["add", "hello", "--field", "work"])
 
@@ -926,7 +927,7 @@ def test_add_command_rejects_config_without_cli_mode(tmp_path, monkeypatch) -> N
 
 
 def test_config_database_command_writes_config(tmp_path, monkeypatch) -> None:
-    """Verify config database writes the shared zembra config.
+    """Verify config database writes the CLI zembra config.
 
     Args:
         tmp_path: Pytest temporary directory fixture.
@@ -935,9 +936,11 @@ def test_config_database_command_writes_config(tmp_path, monkeypatch) -> None:
     Returns:
         None.
     """
-    config_path = tmp_path / ".zembra.env"
+    config_path = tmp_path / ".zembra" / "config.cli.toml"
+    global_config_path = tmp_path / ".zembra.env"
     database_path = tmp_path / "zembra.sqlite3"
-    monkeypatch.setattr(cli, "default_config_path", lambda: config_path)
+    monkeypatch.setattr(cli, "default_cli_config_path", lambda: config_path)
+    monkeypatch.setattr(cli, "default_global_config_path", lambda: global_config_path)
 
     result = runner.invoke(app, ["config", "database", str(database_path)])
 
@@ -946,6 +949,7 @@ def test_config_database_command_writes_config(tmp_path, monkeypatch) -> None:
     config_text = config_path.read_text(encoding="utf-8")
     assert f'path = "{database_path}"' in config_text
     assert "[cli]" not in config_text
+    assert not global_config_path.exists()
 
 
 def test_config_database_command_preserves_existing_fields(tmp_path, monkeypatch) -> None:
@@ -958,13 +962,15 @@ def test_config_database_command_preserves_existing_fields(tmp_path, monkeypatch
     Returns:
         None.
     """
-    config_path = tmp_path / ".zembra.env"
+    config_path = tmp_path / ".zembra" / "config.cli.toml"
     database_path = tmp_path / "zembra.sqlite3"
+    config_path.parent.mkdir(parents=True)
     config_path.write_text(
         'theme = "light"\n\n[cli]\nmode = "direct"\n\n[database]\npath = "old.sqlite3"\n',
         encoding="utf-8",
     )
-    monkeypatch.setattr(cli, "default_config_path", lambda: config_path)
+    monkeypatch.setattr(cli, "default_cli_config_path", lambda: config_path)
+    monkeypatch.setattr(cli, "default_global_config_path", lambda: tmp_path / ".zembra.env")
 
     result = runner.invoke(app, ["config", "database", str(database_path)])
 
@@ -985,9 +991,11 @@ def test_init_command_creates_default_database_and_config(tmp_path, monkeypatch)
     Returns:
         None.
     """
-    config_path = tmp_path / ".zembra.env"
+    config_path = tmp_path / ".zembra" / "config.cli.toml"
     database_path = tmp_path / ".zembra" / "zembra.sqlite3"
-    monkeypatch.setattr(cli, "default_config_path", lambda: config_path)
+    global_config_path = tmp_path / ".zembra.env"
+    monkeypatch.setattr(cli, "default_cli_config_path", lambda: config_path)
+    monkeypatch.setattr(cli, "default_global_config_path", lambda: global_config_path)
     monkeypatch.setattr(cli, "DEFAULT_DATABASE_PATH", database_path)
 
     result = runner.invoke(app, ["init"])
@@ -996,7 +1004,7 @@ def test_init_command_creates_default_database_and_config(tmp_path, monkeypatch)
     assert "Initialized zembra." in result.stdout
     assert f"Database: {database_path} (created)" in result.stdout
     assert f"Config: {config_path} (created)" in result.stdout
-    config = load_config(config_path)
+    config = load_cascading_config(config_path, global_config_path)
     assert config.cli_mode == "direct"
     assert config.database_path == database_path
     with database_connection(database_path) as connection:
@@ -1013,10 +1021,12 @@ def test_init_command_updates_config_and_skips_complete_database(tmp_path, monke
     Returns:
         None.
     """
-    config_path = tmp_path / ".zembra.env"
+    config_path = tmp_path / ".zembra" / "config.cli.toml"
     database_path = tmp_path / "zembra.sqlite3"
+    config_path.parent.mkdir(parents=True)
     config_path.write_text('theme = "light"\n', encoding="utf-8")
-    monkeypatch.setattr(cli, "default_config_path", lambda: config_path)
+    monkeypatch.setattr(cli, "default_cli_config_path", lambda: config_path)
+    monkeypatch.setattr(cli, "default_global_config_path", lambda: tmp_path / ".zembra.env")
 
     first_result = runner.invoke(app, ["init", "--database", str(database_path)])
     second_result = runner.invoke(app, ["init", "--database", str(database_path)])
@@ -1041,9 +1051,10 @@ def test_init_command_rejects_incomplete_database(tmp_path, monkeypatch) -> None
     Returns:
         None.
     """
-    config_path = tmp_path / ".zembra.env"
+    config_path = tmp_path / ".zembra" / "config.cli.toml"
     database_path = tmp_path / "zembra.sqlite3"
-    monkeypatch.setattr(cli, "default_config_path", lambda: config_path)
+    monkeypatch.setattr(cli, "default_cli_config_path", lambda: config_path)
+    monkeypatch.setattr(cli, "default_global_config_path", lambda: tmp_path / ".zembra.env")
     with database_connection(database_path) as connection:
         connection.execute("CREATE TABLE notes (id TEXT PRIMARY KEY)")
 
@@ -1064,10 +1075,12 @@ def test_init_command_reports_invalid_existing_config(tmp_path, monkeypatch) -> 
     Returns:
         None.
     """
-    config_path = tmp_path / ".zembra.env"
+    config_path = tmp_path / ".zembra" / "config.cli.toml"
     database_path = tmp_path / "zembra.sqlite3"
+    config_path.parent.mkdir(parents=True)
     config_path.write_text("[database\n", encoding="utf-8")
-    monkeypatch.setattr(cli, "default_config_path", lambda: config_path)
+    monkeypatch.setattr(cli, "default_cli_config_path", lambda: config_path)
+    monkeypatch.setattr(cli, "default_global_config_path", lambda: tmp_path / ".zembra.env")
 
     result = runner.invoke(app, ["init", "--database", str(database_path)])
 
@@ -1085,9 +1098,10 @@ def test_init_command_allows_add_to_use_initialized_database(tmp_path, monkeypat
     Returns:
         None.
     """
-    config_path = tmp_path / ".zembra.env"
+    config_path = tmp_path / ".zembra" / "config.cli.toml"
     database_path = tmp_path / "zembra.sqlite3"
-    monkeypatch.setattr(cli, "default_config_path", lambda: config_path)
+    monkeypatch.setattr(cli, "default_cli_config_path", lambda: config_path)
+    monkeypatch.setattr(cli, "default_global_config_path", lambda: tmp_path / ".zembra.env")
 
     init_result = runner.invoke(app, ["init", "--database", str(database_path)])
     add_result = runner.invoke(app, ["add", "hello from init", "--field", "work"])
@@ -1109,14 +1123,16 @@ def test_add_command_reports_missing_config(tmp_path, monkeypatch) -> None:
     Returns:
         None.
     """
-    config_path = tmp_path / ".zembra.env"
-    monkeypatch.setattr(cli, "default_config_path", lambda: config_path)
+    cli_config_path = tmp_path / ".zembra" / "config.cli.toml"
+    global_config_path = tmp_path / ".zembra.env"
+    monkeypatch.setattr(cli, "default_cli_config_path", lambda: cli_config_path)
+    monkeypatch.setattr(cli, "default_global_config_path", lambda: global_config_path)
 
     result = runner.invoke(app, ["add", "hello", "--field", "work"])
 
     assert result.exit_code == 1
     assert (
-        f"Config file is missing at {config_path}. "
+        f"Config file is missing. Checked {cli_config_path} and {global_config_path}. "
         "Create it with: zembra-cli config database <file-path>"
     ) in result.stderr
 
@@ -1131,14 +1147,16 @@ def test_run_command_reports_missing_config(tmp_path, monkeypatch) -> None:
     Returns:
         None.
     """
-    config_path = tmp_path / ".zembra.env"
-    monkeypatch.setattr(cli, "default_config_path", lambda: config_path)
+    cli_config_path = tmp_path / ".zembra" / "config.cli.toml"
+    global_config_path = tmp_path / ".zembra.env"
+    monkeypatch.setattr(cli, "default_cli_config_path", lambda: cli_config_path)
+    monkeypatch.setattr(cli, "default_global_config_path", lambda: global_config_path)
 
     result = runner.invoke(app, ["run"])
 
     assert result.exit_code == 1
     assert (
-        f"Config file is missing at {config_path}. "
+        f"Config file is missing. Checked {cli_config_path} and {global_config_path}. "
         "Create it with: zembra-cli config database <file-path>"
     ) in result.stderr
 
@@ -1221,7 +1239,12 @@ def test_hello_command_does_not_require_config(tmp_path, monkeypatch) -> None:
     Returns:
         None.
     """
-    monkeypatch.setattr(cli, "default_config_path", lambda: tmp_path / ".zembra.env")
+    monkeypatch.setattr(
+        cli,
+        "default_cli_config_path",
+        lambda: tmp_path / ".zembra/config.cli.toml",
+    )
+    monkeypatch.setattr(cli, "default_global_config_path", lambda: tmp_path / ".zembra.env")
 
     result = runner.invoke(app, ["hello", "Ada"])
 

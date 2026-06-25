@@ -50,6 +50,28 @@ class ConfigFileMissingError(ConfigError):
         )
 
 
+class CascadingConfigMissingError(ConfigFileMissingError):
+    """Signal that no config file exists in the cascading config chain."""
+
+    def __init__(self, cli_config_path: Path, global_config_path: Path) -> None:
+        """Initialize the cascading missing-file error.
+
+        Args:
+            cli_config_path: Expected CLI-specific configuration path.
+            global_config_path: Expected global fallback configuration path.
+
+        Returns:
+            None.
+        """
+        self.cli_config_path = cli_config_path
+        self.global_config_path = global_config_path
+        ConfigError.__init__(
+            self,
+            f"Config file is missing. Checked {cli_config_path} and {global_config_path}. "
+            "Create it with: zembra-cli config database <file-path>",
+        )
+
+
 class ConfigParseError(ConfigError):
     """Signal that the zembra configuration file is not valid TOML."""
 
@@ -146,37 +168,60 @@ class ZembraConfig:
     http_base_url: str | None = None
 
 
-def default_config_path() -> Path:
-    """Return the default zembra system configuration path.
+def default_cli_config_path() -> Path:
+    """Return the default zembra-cli configuration path.
 
     Args:
         None.
 
     Returns:
-        The default configuration path under the current user's home directory.
+        The default CLI-specific configuration path under the user's home directory.
+    """
+    return Path.home() / ".zembra" / "config.cli.toml"
+
+
+def default_global_config_path() -> Path:
+    """Return the default global zembra fallback configuration path.
+
+    Args:
+        None.
+
+    Returns:
+        The global configuration path under the current user's home directory.
     """
     return Path.home() / ".zembra.env"
 
 
-def load_config(config_path: str | Path | None = None) -> ZembraConfig:
-    """Load zembra configuration from a TOML file.
+def load_cascading_config(
+    cli_config_path: str | Path | None = None,
+    global_config_path: str | Path | None = None,
+) -> ZembraConfig:
+    """Load zembra config from CLI and global files with field-level fallback.
 
     Args:
-        config_path: Optional TOML configuration path.
+        cli_config_path: Optional CLI-specific TOML configuration path.
+        global_config_path: Optional global fallback TOML configuration path.
 
     Returns:
-        The validated zembra configuration.
+        The validated zembra configuration built from merged fields.
     """
-    path = _resolve_config_path(config_path)
-    if not path.exists():
-        raise ConfigFileMissingError(path)
+    cli_path = (
+        Path(cli_config_path).expanduser()
+        if cli_config_path is not None
+        else default_cli_config_path()
+    )
+    global_path = (
+        Path(global_config_path).expanduser()
+        if global_config_path is not None
+        else default_global_config_path()
+    )
 
-    try:
-        data = tomllib.loads(path.read_text(encoding="utf-8"))
-    except tomllib.TOMLDecodeError as error:
-        raise ConfigParseError(f"Config file is not valid TOML: {error}") from error
+    cli_data = _read_optional_config_data(cli_path)
+    global_data = _read_optional_config_data(global_path)
+    if cli_data is None and global_data is None:
+        raise CascadingConfigMissingError(cli_path, global_path)
 
-    return _config_from_data(data)
+    return _config_from_data(_merge_config_data(global_data or {}, cli_data or {}))
 
 
 def write_database_path(
@@ -234,7 +279,76 @@ def _resolve_config_path(config_path: str | Path | None) -> Path:
     Returns:
         An expanded filesystem path.
     """
-    return Path(config_path).expanduser() if config_path is not None else default_config_path()
+    return Path(config_path).expanduser() if config_path is not None else default_cli_config_path()
+
+
+def _read_optional_config_data(path: Path) -> dict[str, Any] | None:
+    """Read TOML config data when the path exists.
+
+    Args:
+        path: Configuration path to read.
+
+    Returns:
+        Parsed TOML data, or None when the file does not exist.
+    """
+    if not path.exists():
+        return None
+    try:
+        return tomllib.loads(path.read_text(encoding="utf-8"))
+    except tomllib.TOMLDecodeError as error:
+        raise ConfigParseError(f"Config file is not valid TOML at {path}: {error}") from error
+
+
+def _merge_config_data(global_data: dict[str, Any], cli_data: dict[str, Any]) -> dict[str, Any]:
+    """Merge CLI config over global config at supported field granularity.
+
+    Args:
+        global_data: Parsed global fallback config.
+        cli_data: Parsed CLI-specific config.
+
+    Returns:
+        A minimal config dictionary containing merged supported fields.
+    """
+    merged: dict[str, Any] = {}
+    cli_section = _merged_section(global_data, cli_data, "cli", ("mode", "http_base_url"))
+    if cli_section:
+        merged["cli"] = cli_section
+    database_section = _merged_section(global_data, cli_data, "database", ("path",))
+    if database_section:
+        merged["database"] = database_section
+    return merged
+
+
+def _merged_section(
+    global_data: dict[str, Any],
+    cli_data: dict[str, Any],
+    section_name: str,
+    field_names: tuple[str, ...],
+) -> dict[str, Any]:
+    """Merge selected fields for a single TOML section.
+
+    Args:
+        global_data: Parsed global fallback config.
+        cli_data: Parsed CLI-specific config.
+        section_name: TOML section name to merge.
+        field_names: Supported field names within the section.
+
+    Returns:
+        A dictionary containing merged section fields.
+    """
+    merged: dict[str, Any] = {}
+    global_section = global_data.get(section_name)
+    cli_section = cli_data.get(section_name)
+    if not isinstance(global_section, dict):
+        global_section = {}
+    if not isinstance(cli_section, dict):
+        cli_section = {}
+    for field_name in field_names:
+        if field_name in cli_section:
+            merged[field_name] = cli_section[field_name]
+        elif field_name in global_section:
+            merged[field_name] = global_section[field_name]
+    return merged
 
 
 def _config_from_data(data: dict[str, Any]) -> ZembraConfig:

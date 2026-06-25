@@ -8,7 +8,12 @@ from typing import Literal
 
 from mcp.server.fastmcp import FastMCP
 
-from zembra_cli.config import ConfigError, default_config_path, load_config
+from zembra_cli.config import (
+    ConfigError,
+    default_cli_config_path,
+    default_global_config_path,
+    load_cascading_config,
+)
 from zembra_cli.database import database_connection, missing_core_tables
 from zembra_cli.models import FieldRecord, NoteRecord, NoteWithMetadata, TagRecord
 from zembra_cli.repository import ZembraRepository
@@ -59,7 +64,10 @@ def open_mcp_repository(config_path: str | Path | None = None) -> Iterator[Zembr
         An iterator yielding a direct SQLite repository.
     """
     try:
-        config = load_config(config_path or default_config_path())
+        config = load_cascading_config(
+            config_path or default_cli_config_path(),
+            default_global_config_path(),
+        )
     except ConfigError as error:
         raise ZembraMcpError(error.message) from error
 
