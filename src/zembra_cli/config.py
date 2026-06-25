@@ -149,6 +149,23 @@ class ConfigHttpBaseUrlMissingError(ConfigError):
         )
 
 
+class ConfigWorkspaceIdMissingError(ConfigError):
+    """Signal that direct mode does not define workspace.id in CLI config."""
+
+    def __init__(self) -> None:
+        """Initialize the missing workspace ID error.
+
+        Args:
+            None.
+
+        Returns:
+            None.
+        """
+        super().__init__(
+            "Workspace ID is missing in the zembra CLI config. Run: zembra-cli init"
+        )
+
+
 class ConfigParentMissingError(ConfigError):
     """Signal that the configuration file parent directory is absent."""
 
@@ -161,11 +178,15 @@ class ZembraConfig:
         cli_mode: CLI connection mode.
         database_path: SQLite database path configured for direct mode.
         http_base_url: Backend base URL configured for HTTP mode.
+        workspace_id: CLI direct-mode workspace identifier.
+        workspace_name: Optional CLI direct-mode workspace display name.
     """
 
     cli_mode: Literal["direct", "http"]
     database_path: Path | None = None
     http_base_url: str | None = None
+    workspace_id: str | None = None
+    workspace_name: str | None = None
 
 
 def default_cli_config_path() -> Path:
@@ -221,13 +242,20 @@ def load_cascading_config(
     if cli_data is None and global_data is None:
         raise CascadingConfigMissingError(cli_path, global_path)
 
-    return _config_from_data(_merge_config_data(global_data or {}, cli_data or {}))
+    merged_data = _merge_config_data(global_data or {}, cli_data or {})
+    if isinstance(cli_data, dict):
+        workspace_section = cli_data.get("workspace")
+        if isinstance(workspace_section, dict):
+            merged_data["workspace"] = dict(workspace_section)
+    return _config_from_data(merged_data)
 
 
 def write_database_path(
     database_path: str | Path,
     config_path: str | Path | None = None,
     set_direct_mode: bool = False,
+    workspace_id: str | None = None,
+    workspace_name: str | None = None,
 ) -> ZembraConfig:
     """Write the configured zembra database path to a TOML file.
 
@@ -235,6 +263,8 @@ def write_database_path(
         database_path: SQLite database path to store.
         config_path: Optional TOML configuration path.
         set_direct_mode: Whether to explicitly set ``[cli].mode`` to ``direct``.
+        workspace_id: Optional workspace ID to write into CLI config.
+        workspace_name: Optional workspace display name to write into CLI config.
 
     Returns:
         A direct-mode config object containing the written database path.
@@ -266,8 +296,24 @@ def write_database_path(
             data["cli"] = cli_section
         cli_section["mode"] = "direct"
 
+    if workspace_id is not None:
+        workspace_section = data.get("workspace")
+        if not isinstance(workspace_section, dict):
+            workspace_section = {}
+            data["workspace"] = workspace_section
+        workspace_section["id"] = workspace_id
+        if workspace_name is not None:
+            workspace_section["name"] = workspace_name
+        else:
+            workspace_section.pop("name", None)
+
     path.write_text(_dump_toml(data), encoding="utf-8")
-    return ZembraConfig(cli_mode="direct", database_path=resolved_database_path)
+    return ZembraConfig(
+        cli_mode="direct",
+        database_path=resolved_database_path,
+        workspace_id=workspace_id,
+        workspace_name=workspace_name,
+    )
 
 
 def _resolve_config_path(config_path: str | Path | None) -> Path:
@@ -384,7 +430,23 @@ def _config_from_data(data: dict[str, Any]) -> ZembraConfig:
     if not isinstance(raw_database_path, str) or not raw_database_path.strip():
         raise ConfigDatabasePathMissingError()
 
-    return ZembraConfig(cli_mode="direct", database_path=Path(raw_database_path).expanduser())
+    workspace_section = data.get("workspace")
+    if not isinstance(workspace_section, dict):
+        raise ConfigWorkspaceIdMissingError()
+
+    raw_workspace_id = workspace_section.get("id")
+    if not isinstance(raw_workspace_id, str) or not raw_workspace_id.strip():
+        raise ConfigWorkspaceIdMissingError()
+
+    raw_workspace_name = workspace_section.get("name")
+    workspace_name = raw_workspace_name.strip() if isinstance(raw_workspace_name, str) else None
+
+    return ZembraConfig(
+        cli_mode="direct",
+        database_path=Path(raw_database_path).expanduser(),
+        workspace_id=raw_workspace_id.strip(),
+        workspace_name=workspace_name,
+    )
 
 
 def _dump_toml(data: dict[str, Any]) -> str:

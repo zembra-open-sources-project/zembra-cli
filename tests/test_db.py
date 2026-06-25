@@ -52,6 +52,50 @@ def test_initialize_database_creates_note_role_column(tmp_path) -> None:
     assert role_column["dflt_value"] == "'Human'"
 
 
+def test_initialize_database_creates_workspace_scoped_note_columns(tmp_path) -> None:
+    """Verify latest notes schema includes workspace and sync state columns.
+
+    Args:
+        tmp_path: Pytest temporary directory fixture.
+
+    Returns:
+        None.
+    """
+    database_path = tmp_path / "zembra.sqlite3"
+
+    with database_connection(database_path) as connection:
+        initialize_database(connection)
+        columns = connection.execute("PRAGMA table_info(notes)").fetchall()
+
+    column_names = {column["name"] for column in columns}
+    assert {"workspace_id", "last_change_id", "conflict_status"} <= column_names
+    conflict_column = next(column for column in columns if column["name"] == "conflict_status")
+    assert conflict_column["notnull"] == 1
+    assert conflict_column["dflt_value"] == "'none'"
+
+
+def test_initialize_database_creates_hierarchical_tag_columns(tmp_path) -> None:
+    """Verify latest tags schema includes hierarchy fields.
+
+    Args:
+        tmp_path: Pytest temporary directory fixture.
+
+    Returns:
+        None.
+    """
+    database_path = tmp_path / "zembra.sqlite3"
+
+    with database_connection(database_path) as connection:
+        initialize_database(connection)
+        columns = connection.execute("PRAGMA table_info(tags)").fetchall()
+
+    column_names = {column["name"] for column in columns}
+    assert {"workspace_id", "parent_tag_id", "path", "depth"} <= column_names
+    depth_column = next(column for column in columns if column["name"] == "depth")
+    assert depth_column["notnull"] == 1
+    assert depth_column["dflt_value"] == "0"
+
+
 def test_note_role_constraint_rejects_unknown_role(tmp_path) -> None:
     """Verify SQLite rejects note roles outside the shared schema enum.
 
@@ -65,12 +109,18 @@ def test_note_role_constraint_rejects_unknown_role(tmp_path) -> None:
 
     with database_connection(database_path) as connection:
         initialize_database(connection)
+        connection.execute(
+            """
+            INSERT INTO workspaces (id, workspace_name, created_at, updated_at)
+            VALUES ('workspace_1', NULL, 1, 1)
+            """
+        )
 
         with pytest.raises(sqlite3.IntegrityError, match="CHECK constraint failed"):
             connection.execute(
                 """
-                INSERT INTO notes (id, content, role, created_at, updated_at)
-                VALUES ('note_1', 'hello', 'System', 1, 1)
+                INSERT INTO notes (id, workspace_id, content, role, created_at, updated_at)
+                VALUES ('note_1', 'workspace_1', 'hello', 'System', 1, 1)
                 """
             )
 

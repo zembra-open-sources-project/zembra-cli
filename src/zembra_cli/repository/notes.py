@@ -57,22 +57,25 @@ class ZembraRepository(FieldTagRepository):
             self.connection.execute(
                 """
                 INSERT INTO notes (
-                    id, content, role, field_id, created_at, updated_at, current_revision_id
+                    id, workspace_id, content, role, field_id, created_at, updated_at,
+                    current_revision_id
                 )
-                VALUES (?, ?, ?, ?, ?, ?, NULL)
+                VALUES (?, ?, ?, ?, ?, ?, ?, NULL)
                 """,
-                (note_id, content, role, field_id, now, now),
+                (note_id, self.workspace_id, content, role, field_id, now, now),
             )
             self.connection.execute(
                 """
-                INSERT INTO note_revisions (id, note_id, content, title, device_id, created_at)
-                VALUES (?, ?, ?, NULL, ?, ?)
+                INSERT INTO note_revisions (
+                    id, workspace_id, note_id, content, title, device_id, created_at
+                )
+                VALUES (?, ?, ?, ?, NULL, ?, ?)
                 """,
-                (revision_id, note_id, content, device_id, now),
+                (revision_id, self.workspace_id, note_id, content, device_id, now),
             )
             self.connection.execute(
-                "UPDATE notes SET current_revision_id = ? WHERE id = ?",
-                (revision_id, note_id),
+                "UPDATE notes SET current_revision_id = ? WHERE workspace_id = ? AND id = ?",
+                (revision_id, self.workspace_id, note_id),
             )
 
         for tag_name in tag_names or ():
@@ -94,11 +97,14 @@ class ZembraRepository(FieldTagRepository):
             Matching note record, or None when absent or filtered.
         """
         if include_deleted:
-            row = self.connection.execute("SELECT * FROM notes WHERE id = ?", (note_id,)).fetchone()
+            row = self.connection.execute(
+                "SELECT * FROM notes WHERE workspace_id = ? AND id = ?",
+                (self.workspace_id, note_id),
+            ).fetchone()
         else:
             row = self.connection.execute(
-                "SELECT * FROM notes WHERE id = ? AND deleted_at IS NULL",
-                (note_id,),
+                "SELECT * FROM notes WHERE workspace_id = ? AND id = ? AND deleted_at IS NULL",
+                (self.workspace_id, note_id),
             ).fetchone()
         return self._row_to_model(row, NoteRecord) if row is not None else None
 
@@ -153,15 +159,21 @@ class ZembraRepository(FieldTagRepository):
         """
         if include_deleted:
             rows = self.connection.execute(
-                "SELECT * FROM notes ORDER BY updated_at DESC, created_at DESC"
+                """
+                SELECT * FROM notes
+                WHERE workspace_id = ?
+                ORDER BY updated_at DESC, created_at DESC
+                """,
+                (self.workspace_id,),
             ).fetchall()
         else:
             rows = self.connection.execute(
                 """
                 SELECT * FROM notes
-                WHERE deleted_at IS NULL
+                WHERE workspace_id = ? AND deleted_at IS NULL
                 ORDER BY updated_at DESC, created_at DESC
-                """
+                """,
+                (self.workspace_id,),
             ).fetchall()
         return [self._row_to_model(row, NoteRecord) for row in rows]
 
@@ -177,11 +189,13 @@ class ZembraRepository(FieldTagRepository):
         rows = self.connection.execute(
             """
             SELECT * FROM notes
-            WHERE deleted_at IS NULL AND archived_at IS NULL
+            WHERE workspace_id = ?
+              AND deleted_at IS NULL
+              AND archived_at IS NULL
             ORDER BY RANDOM()
             LIMIT ?
             """,
-            (number,),
+            (self.workspace_id, number),
         ).fetchall()
         notes = [self._row_to_model(row, NoteRecord) for row in rows]
         return [self._note_with_metadata(note) for note in notes]
@@ -200,13 +214,19 @@ class ZembraRepository(FieldTagRepository):
             """
             SELECT DISTINCT tags.*
             FROM tags
-            JOIN note_tags ON note_tags.tag_id = tags.id
-            JOIN notes ON notes.id = note_tags.note_id
-            WHERE notes.deleted_at IS NULL AND notes.archived_at IS NULL
+            JOIN note_tags
+              ON note_tags.workspace_id = tags.workspace_id
+             AND note_tags.tag_id = tags.id
+            JOIN notes
+              ON notes.workspace_id = note_tags.workspace_id
+             AND notes.id = note_tags.note_id
+            WHERE tags.workspace_id = ?
+              AND notes.deleted_at IS NULL
+              AND notes.archived_at IS NULL
             ORDER BY RANDOM()
             LIMIT ?
             """,
-            (number,),
+            (self.workspace_id, number),
         ).fetchall()
         groups: list[TaggedNotesGroup] = []
         remaining_count = count
@@ -233,12 +253,16 @@ class ZembraRepository(FieldTagRepository):
             """
             SELECT DISTINCT fields.*
             FROM fields
-            JOIN notes ON notes.field_id = fields.id
-            WHERE notes.deleted_at IS NULL AND notes.archived_at IS NULL
+            JOIN notes
+              ON notes.workspace_id = fields.workspace_id
+             AND notes.field_id = fields.id
+            WHERE fields.workspace_id = ?
+              AND notes.deleted_at IS NULL
+              AND notes.archived_at IS NULL
             ORDER BY RANDOM()
             LIMIT ?
             """,
-            (number,),
+            (self.workspace_id, number),
         ).fetchall()
         groups: list[FieldNotesGroup] = []
         remaining_count = count
@@ -274,18 +298,20 @@ class ZembraRepository(FieldTagRepository):
         with self.connection:
             self.connection.execute(
                 """
-                INSERT INTO note_revisions (id, note_id, content, title, device_id, created_at)
-                VALUES (?, ?, ?, NULL, ?, ?)
+                INSERT INTO note_revisions (
+                    id, workspace_id, note_id, content, title, device_id, created_at
+                )
+                VALUES (?, ?, ?, ?, NULL, ?, ?)
                 """,
-                (revision_id, note_id, content, device_id, now),
+                (revision_id, self.workspace_id, note_id, content, device_id, now),
             )
             self.connection.execute(
                 """
                 UPDATE notes
                 SET content = ?, updated_at = ?, current_revision_id = ?
-                WHERE id = ? AND deleted_at IS NULL
+                WHERE workspace_id = ? AND id = ? AND deleted_at IS NULL
                 """,
-                (content, now, revision_id, note_id),
+                (content, now, revision_id, self.workspace_id, note_id),
             )
 
         return self._require_note(note_id)
@@ -303,8 +329,12 @@ class ZembraRepository(FieldTagRepository):
         archived_at = self._now()
         with self.connection:
             self.connection.execute(
-                "UPDATE notes SET archived_at = ? WHERE id = ? AND deleted_at IS NULL",
-                (archived_at, note_id),
+                """
+                UPDATE notes
+                SET archived_at = ?
+                WHERE workspace_id = ? AND id = ? AND deleted_at IS NULL
+                """,
+                (archived_at, self.workspace_id, note_id),
             )
         return self._require_note(note_id)
 
@@ -321,8 +351,12 @@ class ZembraRepository(FieldTagRepository):
         deleted_at = self._now()
         with self.connection:
             self.connection.execute(
-                "UPDATE notes SET deleted_at = ? WHERE id = ? AND deleted_at IS NULL",
-                (deleted_at, note_id),
+                """
+                UPDATE notes
+                SET deleted_at = ?
+                WHERE workspace_id = ? AND id = ? AND deleted_at IS NULL
+                """,
+                (deleted_at, self.workspace_id, note_id),
             )
         return self._require_note(note_id, include_deleted=True)
 
@@ -353,14 +387,17 @@ class ZembraRepository(FieldTagRepository):
             """
             SELECT notes.*
             FROM notes
-            JOIN note_tags ON note_tags.note_id = notes.id
-            WHERE note_tags.tag_id = ?
+            JOIN note_tags
+              ON note_tags.workspace_id = notes.workspace_id
+             AND note_tags.note_id = notes.id
+            WHERE note_tags.workspace_id = ?
+              AND note_tags.tag_id = ?
               AND notes.deleted_at IS NULL
               AND notes.archived_at IS NULL
             ORDER BY RANDOM()
             LIMIT ?
             """,
-            (tag_id, limit),
+            (self.workspace_id, tag_id, limit),
         ).fetchall()
         return [self._note_with_metadata(self._row_to_model(row, NoteRecord)) for row in rows]
 
@@ -377,13 +414,14 @@ class ZembraRepository(FieldTagRepository):
         rows = self.connection.execute(
             """
             SELECT * FROM notes
-            WHERE field_id = ?
+            WHERE workspace_id = ?
+              AND field_id = ?
               AND deleted_at IS NULL
               AND archived_at IS NULL
             ORDER BY RANDOM()
             LIMIT ?
             """,
-            (field_id, limit),
+            (self.workspace_id, field_id, limit),
         ).fetchall()
         return [self._note_with_metadata(self._row_to_model(row, NoteRecord)) for row in rows]
 
@@ -399,10 +437,10 @@ class ZembraRepository(FieldTagRepository):
         rows = self.connection.execute(
             """
             SELECT * FROM note_revisions
-            WHERE note_id = ?
+            WHERE workspace_id = ? AND note_id = ?
             ORDER BY created_at ASC, id ASC
             """,
-            (note_id,),
+            (self.workspace_id, note_id),
         ).fetchall()
         return [self._row_to_model(row, NoteRevisionRecord) for row in rows]
 
@@ -455,20 +493,20 @@ class ZembraRepository(FieldTagRepository):
             rows = self.connection.execute(
                 """
                 SELECT * FROM notes
-                WHERE id LIKE ?
+                WHERE workspace_id = ? AND id LIKE ?
                 ORDER BY updated_at DESC, created_at DESC, id ASC
                 LIMIT ?
                 """,
-                (f"{note_ref}%", NOTE_REFERENCE_CANDIDATE_LIMIT),
+                (self.workspace_id, f"{note_ref}%", NOTE_REFERENCE_CANDIDATE_LIMIT),
             ).fetchall()
         else:
             rows = self.connection.execute(
                 """
                 SELECT * FROM notes
-                WHERE id LIKE ? AND deleted_at IS NULL
+                WHERE workspace_id = ? AND id LIKE ? AND deleted_at IS NULL
                 ORDER BY updated_at DESC, created_at DESC, id ASC
                 LIMIT ?
                 """,
-                (f"{note_ref}%", NOTE_REFERENCE_CANDIDATE_LIMIT),
+                (self.workspace_id, f"{note_ref}%", NOTE_REFERENCE_CANDIDATE_LIMIT),
             ).fetchall()
         return [self._row_to_model(row, NoteRecord) for row in rows]

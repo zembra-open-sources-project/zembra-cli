@@ -14,6 +14,9 @@ from zembra_cli.repository import (
     ZembraRepository,
 )
 
+TEST_WORKSPACE_ID = "550e8400-e29b-41d4-a716-446655440000"
+OTHER_WORKSPACE_ID = "650e8400-e29b-41d4-a716-446655440000"
+
 
 class SequenceFactory:
     """Generate deterministic values for repository tests.
@@ -129,6 +132,20 @@ def connection(tmp_path) -> Iterator[sqlite3.Connection]:
     database_path = tmp_path / "zembra.sqlite3"
     with database_connection(database_path) as sqlite_connection:
         initialize_database(sqlite_connection)
+        sqlite_connection.execute(
+            """
+            INSERT INTO workspaces (id, workspace_name, created_at, updated_at)
+            VALUES (?, NULL, 1, 1)
+            """,
+            (TEST_WORKSPACE_ID,),
+        )
+        sqlite_connection.execute(
+            """
+            INSERT INTO workspaces (id, workspace_name, created_at, updated_at)
+            VALUES (?, NULL, 1, 1)
+            """,
+            (OTHER_WORKSPACE_ID,),
+        )
         yield sqlite_connection
 
 
@@ -144,6 +161,7 @@ def repository(connection: sqlite3.Connection) -> ZembraRepository:
     """
     return ZembraRepository(
         connection,
+        workspace_id=TEST_WORKSPACE_ID,
         id_factory=SequenceFactory("id"),
         clock=IntegerSequenceFactory(start=100),
     )
@@ -161,6 +179,7 @@ def prefix_repository(connection: sqlite3.Connection, ids: list[str]) -> ZembraR
     """
     return ZembraRepository(
         connection,
+        workspace_id=TEST_WORKSPACE_ID,
         id_factory=ListFactory(ids),
         clock=IntegerSequenceFactory(start=200),
     )
@@ -195,6 +214,10 @@ def test_get_or_create_tag_is_idempotent(repository: ZembraRepository) -> None:
     second = repository.get_or_create_tag("python")
 
     assert first.id == second.id
+    assert first.workspace_id == TEST_WORKSPACE_ID
+    assert first.parent_tag_id is None
+    assert first.path == "python"
+    assert first.depth == 0
     assert [tag.name for tag in repository.list_tags()] == ["python"]
 
 
@@ -212,6 +235,7 @@ def test_create_note_writes_field_tags_and_initial_revision(
     note = repository.create_note("hello", field_name="work", tag_names=["python", "cli"])
 
     assert note.content == "hello"
+    assert note.workspace_id == TEST_WORKSPACE_ID
     assert note.role == "Human"
     assert note.field_id is not None
     assert note.current_revision_id is not None
@@ -220,7 +244,38 @@ def test_create_note_writes_field_tags_and_initial_revision(
     revisions = repository.list_note_revisions(note.id)
     assert len(revisions) == 1
     assert revisions[0].id == note.current_revision_id
+    assert revisions[0].workspace_id == TEST_WORKSPACE_ID
     assert revisions[0].content == "hello"
+
+
+def test_repository_isolates_records_by_workspace(connection: sqlite3.Connection) -> None:
+    """Verify repository methods only expose the configured workspace.
+
+    Args:
+        connection: Initialized SQLite connection fixture.
+
+    Returns:
+        None.
+    """
+    current = ZembraRepository(
+        connection,
+        workspace_id=TEST_WORKSPACE_ID,
+        id_factory=SequenceFactory("current"),
+        clock=IntegerSequenceFactory(start=100),
+    )
+    other = ZembraRepository(
+        connection,
+        workspace_id=OTHER_WORKSPACE_ID,
+        id_factory=SequenceFactory("other"),
+        clock=IntegerSequenceFactory(start=200),
+    )
+
+    current_note = current.create_note("current", field_name="work", tag_names=["cli"])
+    other.create_note("other", field_name="work", tag_names=["cli"])
+
+    assert [note.id for note in current.list_notes()] == [current_note.id]
+    assert [field.workspace_id for field in current.list_fields()] == [TEST_WORKSPACE_ID]
+    assert [tag.workspace_id for tag in current.list_tags()] == [TEST_WORKSPACE_ID]
 
 
 def test_create_note_accepts_agent_role(repository: ZembraRepository) -> None:

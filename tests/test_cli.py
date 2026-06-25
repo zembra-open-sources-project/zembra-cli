@@ -2,6 +2,7 @@
 
 import json
 import sqlite3
+import uuid
 from pathlib import Path
 
 import pytest
@@ -29,6 +30,7 @@ from zembra_cli.repository import (
 )
 
 runner = CliRunner()
+TEST_WORKSPACE_ID = "550e8400-e29b-41d4-a716-446655440000"
 
 
 def configure_cli_database(monkeypatch, tmp_path, database_path) -> Path:
@@ -45,7 +47,8 @@ def configure_cli_database(monkeypatch, tmp_path, database_path) -> Path:
     config_path = tmp_path / ".zembra" / "config.cli.toml"
     config_path.parent.mkdir(parents=True, exist_ok=True)
     config_path.write_text(
-        f'[cli]\nmode = "direct"\n\n[database]\npath = "{database_path}"\n',
+        f'[cli]\nmode = "direct"\n\n[database]\npath = "{database_path}"\n\n'
+        f'[workspace]\nid = "{TEST_WORKSPACE_ID}"\n',
         encoding="utf-8",
     )
     monkeypatch.setattr(cli, "default_cli_config_path", lambda: config_path)
@@ -86,6 +89,13 @@ def initialize_cli_database(database_path) -> None:
     """
     with database_connection(database_path) as connection:
         initialize_database(connection)
+        connection.execute(
+            """
+            INSERT INTO workspaces (id, workspace_name, created_at, updated_at)
+            VALUES (?, NULL, 1, 1)
+            """,
+            (TEST_WORKSPACE_ID,),
+        )
 
 
 def seed_cli_list_items(database_path, fields: list[str], tags: list[str]) -> None:
@@ -100,7 +110,7 @@ def seed_cli_list_items(database_path, fields: list[str], tags: list[str]) -> No
         None.
     """
     with database_connection(database_path) as connection:
-        repository = ZembraRepository(connection)
+        repository = ZembraRepository(connection, workspace_id=TEST_WORKSPACE_ID)
         for field in fields:
             repository.get_or_create_field(field)
         for tag in tags:
@@ -154,9 +164,11 @@ def make_note(note_id: str, content: str) -> NoteRecord:
     """
     return NoteRecord(
         id=note_id,
+        workspace_id=TEST_WORKSPACE_ID,
         content=content,
         created_at=1,
         updated_at=1,
+        conflict_status="none",
     )
 
 
@@ -235,8 +247,24 @@ class FakeHttpRepository:
             Fake tag records.
         """
         return [
-            TagRecord(id="tag-1", name="alpha", created_at=1),
-            TagRecord(id="tag-2", name="beta", created_at=1),
+            TagRecord(
+                id="tag-1",
+                workspace_id=TEST_WORKSPACE_ID,
+                name="alpha",
+                parent_tag_id=None,
+                path="alpha",
+                depth=0,
+                created_at=1,
+            ),
+            TagRecord(
+                id="tag-2",
+                workspace_id=TEST_WORKSPACE_ID,
+                name="beta",
+                parent_tag_id=None,
+                path="beta",
+                depth=0,
+                created_at=1,
+            ),
         ]
 
     def list_fields(self) -> list[FieldRecord]:
@@ -248,7 +276,14 @@ class FakeHttpRepository:
         Returns:
             Fake field records.
         """
-        return [FieldRecord(id="field-1", name="work", created_at=1)]
+        return [
+            FieldRecord(
+                id="field-1",
+                workspace_id=TEST_WORKSPACE_ID,
+                name="work",
+                created_at=1,
+            )
+        ]
 
     def list_notes(self, include_deleted: bool = False) -> list[NoteRecord]:
         """Return fake notes.
@@ -272,8 +307,21 @@ class FakeHttpRepository:
         """
         FakeHttpRepository.random_note_requests.append(number)
         note = make_note("abcd0000000000000000000000000000", "full http content")
-        field = FieldRecord(id="field-1", name="work", created_at=1)
-        tag = TagRecord(id="tag-1", name="cli", created_at=1)
+        field = FieldRecord(
+            id="field-1",
+            workspace_id=TEST_WORKSPACE_ID,
+            name="work",
+            created_at=1,
+        )
+        tag = TagRecord(
+            id="tag-1",
+            workspace_id=TEST_WORKSPACE_ID,
+            name="cli",
+            parent_tag_id=None,
+            path="cli",
+            depth=0,
+            created_at=1,
+        )
         return [NoteWithMetadata(note=note, field=field, tags=[tag])][:number]
 
     def random_tagged_notes(self, number: int, count: int) -> list[TaggedNotesGroup]:
@@ -286,7 +334,15 @@ class FakeHttpRepository:
         Returns:
             Fake random tag groups with note metadata.
         """
-        tag = TagRecord(id="tag-1", name="cli", created_at=1)
+        tag = TagRecord(
+            id="tag-1",
+            workspace_id=TEST_WORKSPACE_ID,
+            name="cli",
+            parent_tag_id=None,
+            path="cli",
+            depth=0,
+            created_at=1,
+        )
         return [TaggedNotesGroup(tag=tag, notes=self.random_notes(count))][:number]
 
     def random_field_notes(self, number: int, count: int) -> list[FieldNotesGroup]:
@@ -299,7 +355,12 @@ class FakeHttpRepository:
         Returns:
             Fake random field groups with note metadata.
         """
-        field = FieldRecord(id="field-1", name="work", created_at=1)
+        field = FieldRecord(
+            id="field-1",
+            workspace_id=TEST_WORKSPACE_ID,
+            name="work",
+            created_at=1,
+        )
         return [FieldNotesGroup(field=field, notes=self.random_notes(count))][:number]
 
 
@@ -667,7 +728,7 @@ def test_random_notes_json_outputs_complete_direct_metadata(tmp_path, monkeypatc
     initialize_cli_database(database_path)
     configure_cli_database(monkeypatch, tmp_path, database_path)
     with database_connection(database_path) as connection:
-        repository = ZembraRepository(connection)
+        repository = ZembraRepository(connection, workspace_id=TEST_WORKSPACE_ID)
         repository.create_note("full\ncontent", field_name="work", tag_names=["cli"])
 
     result = runner.invoke(app, ["random", "notes", "-n", "3", "--json"])
@@ -697,7 +758,7 @@ def test_random_notes_human_output_preserves_complete_direct_content(
     configure_cli_database(monkeypatch, tmp_path, database_path)
     content = "# Title\n\n- first item\n- second item without truncation"
     with database_connection(database_path) as connection:
-        repository = ZembraRepository(connection)
+        repository = ZembraRepository(connection, workspace_id=TEST_WORKSPACE_ID)
         repository.create_note(content, field_name="work", tag_names=["cli"])
 
     result = runner.invoke(app, ["random", "notes", "-n", "1"])
@@ -724,7 +785,7 @@ def test_random_tags_and_fields_json_output_direct_groups(tmp_path, monkeypatch)
     initialize_cli_database(database_path)
     configure_cli_database(monkeypatch, tmp_path, database_path)
     with database_connection(database_path) as connection:
-        repository = ZembraRepository(connection)
+        repository = ZembraRepository(connection, workspace_id=TEST_WORKSPACE_ID)
         repository.create_note("group content", field_name="work", tag_names=["cli"])
 
     tags_result = runner.invoke(app, ["random", "tags", "-n", "2", "--count", "5", "--json"])
@@ -1007,8 +1068,17 @@ def test_init_command_creates_default_database_and_config(tmp_path, monkeypatch)
     config = load_cascading_config(config_path, global_config_path)
     assert config.cli_mode == "direct"
     assert config.database_path == database_path
+    assert config.workspace_id is not None
+    uuid.UUID(config.workspace_id)
+    assert config.workspace_name is None
     with database_connection(database_path) as connection:
         assert missing_core_tables(connection) == set()
+        workspace = connection.execute(
+            "SELECT * FROM workspaces WHERE id = ?",
+            (config.workspace_id,),
+        ).fetchone()
+    assert workspace is not None
+    assert workspace["workspace_name"] is None
 
 
 def test_init_command_updates_config_and_skips_complete_database(tmp_path, monkeypatch) -> None:
@@ -1039,6 +1109,47 @@ def test_init_command_updates_config_and_skips_complete_database(tmp_path, monke
     assert 'theme = "light"' in config_text
     assert 'mode = "direct"' in config_text
     assert f'path = "{database_path}"' in config_text
+    assert "[workspace]" in config_text
+
+
+def test_init_command_accepts_workspace_name(tmp_path, monkeypatch) -> None:
+    """Verify init stores an explicit workspace display name.
+
+    Args:
+        tmp_path: Pytest temporary directory fixture.
+        monkeypatch: Pytest monkeypatch fixture.
+
+    Returns:
+        None.
+    """
+    config_path = tmp_path / ".zembra" / "config.cli.toml"
+    database_path = tmp_path / "zembra.sqlite3"
+    monkeypatch.setattr(cli, "default_cli_config_path", lambda: config_path)
+    monkeypatch.setattr(cli, "default_global_config_path", lambda: tmp_path / ".zembra.env")
+
+    result = runner.invoke(
+        app,
+        [
+            "init",
+            "--database",
+            str(database_path),
+            "--workspace-id",
+            TEST_WORKSPACE_ID,
+            "--workspace-name",
+            "Research",
+        ],
+    )
+
+    assert result.exit_code == 0
+    config = load_cascading_config(config_path, tmp_path / ".zembra.env")
+    assert config.workspace_id == TEST_WORKSPACE_ID
+    assert config.workspace_name == "Research"
+    with database_connection(database_path) as connection:
+        workspace = connection.execute(
+            "SELECT * FROM workspaces WHERE id = ?",
+            (TEST_WORKSPACE_ID,),
+        ).fetchone()
+    assert workspace["workspace_name"] == "Research"
 
 
 def test_init_command_rejects_incomplete_database(tmp_path, monkeypatch) -> None:

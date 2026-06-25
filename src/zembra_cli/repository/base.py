@@ -16,6 +16,7 @@ class BaseRepository:
 
     Attributes:
         connection: SQLite connection used by repository methods.
+        workspace_id: Workspace identifier used to scope repository operations.
         id_factory: Callable used to generate stable record identifiers.
         clock: Callable returning the current Unix timestamp.
     """
@@ -23,6 +24,7 @@ class BaseRepository:
     def __init__(
         self,
         connection: sqlite3.Connection,
+        workspace_id: str,
         id_factory: Callable[[], str] | None = None,
         clock: Callable[[], int] | None = None,
     ) -> None:
@@ -30,6 +32,7 @@ class BaseRepository:
 
         Args:
             connection: Open SQLite connection configured by the caller.
+            workspace_id: Workspace identifier used to scope repository operations.
             id_factory: Optional ID generator for deterministic tests.
             clock: Optional Unix timestamp provider for deterministic tests.
 
@@ -37,6 +40,7 @@ class BaseRepository:
             None.
         """
         self.connection = connection
+        self.workspace_id = workspace_id
         self.id_factory = id_factory or self._default_id_factory
         self.clock = clock or self._default_clock
 

@@ -16,6 +16,7 @@ SCHEMA_SQL_PATH = (
 )
 
 CORE_TABLES = (
+    "workspaces",
     "fields",
     "tags",
     "devices",
@@ -24,6 +25,9 @@ CORE_TABLES = (
     "note_links",
     "attachments",
     "note_revisions",
+    "sync_changes",
+    "sync_state",
+    "sync_conflicts",
 )
 
 DEFAULT_DATABASE_PATH = Path.home() / ".zembra" / "zembra.sqlite3"

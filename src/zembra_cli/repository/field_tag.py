@@ -17,7 +17,10 @@ class FieldTagRepository(BaseRepository):
         Returns:
             Matching field record, or None when no field exists.
         """
-        row = self.connection.execute("SELECT * FROM fields WHERE id = ?", (field_id,)).fetchone()
+        row = self.connection.execute(
+            "SELECT * FROM fields WHERE workspace_id = ? AND id = ?",
+            (self.workspace_id, field_id),
+        ).fetchone()
         return self._row_to_model(row, FieldRecord) if row is not None else None
 
     def get_field_by_name(self, name: str) -> FieldRecord | None:
@@ -29,7 +32,10 @@ class FieldTagRepository(BaseRepository):
         Returns:
             Matching field record, or None when no field exists.
         """
-        row = self.connection.execute("SELECT * FROM fields WHERE name = ?", (name,)).fetchone()
+        row = self.connection.execute(
+            "SELECT * FROM fields WHERE workspace_id = ? AND name = ?",
+            (self.workspace_id, name),
+        ).fetchone()
         return self._row_to_model(row, FieldRecord) if row is not None else None
 
     def list_fields(self) -> list[FieldRecord]:
@@ -41,7 +47,10 @@ class FieldTagRepository(BaseRepository):
         Returns:
             Field records sorted by name.
         """
-        rows = self.connection.execute("SELECT * FROM fields ORDER BY name ASC").fetchall()
+        rows = self.connection.execute(
+            "SELECT * FROM fields WHERE workspace_id = ? ORDER BY name ASC",
+            (self.workspace_id,),
+        ).fetchall()
         return [self._row_to_model(row, FieldRecord) for row in rows]
 
     def get_or_create_field(self, name: str) -> FieldRecord:
@@ -61,8 +70,8 @@ class FieldTagRepository(BaseRepository):
         created_at = self._now()
         with self.connection:
             self.connection.execute(
-                "INSERT INTO fields (id, name, created_at) VALUES (?, ?, ?)",
-                (field_id, name, created_at),
+                "INSERT INTO fields (id, workspace_id, name, created_at) VALUES (?, ?, ?, ?)",
+                (field_id, self.workspace_id, name, created_at),
             )
         field = self.get_field_by_name(name)
         if field is None:
@@ -78,7 +87,10 @@ class FieldTagRepository(BaseRepository):
         Returns:
             Matching tag record, or None when no tag exists.
         """
-        row = self.connection.execute("SELECT * FROM tags WHERE name = ?", (name,)).fetchone()
+        row = self.connection.execute(
+            "SELECT * FROM tags WHERE workspace_id = ? AND path = ?",
+            (self.workspace_id, name),
+        ).fetchone()
         return self._row_to_model(row, TagRecord) if row is not None else None
 
     def list_tags(self) -> list[TagRecord]:
@@ -90,7 +102,10 @@ class FieldTagRepository(BaseRepository):
         Returns:
             Tag records sorted by name.
         """
-        rows = self.connection.execute("SELECT * FROM tags ORDER BY name ASC").fetchall()
+        rows = self.connection.execute(
+            "SELECT * FROM tags WHERE workspace_id = ? ORDER BY name ASC",
+            (self.workspace_id,),
+        ).fetchall()
         return [self._row_to_model(row, TagRecord) for row in rows]
 
     def get_or_create_tag(self, name: str) -> TagRecord:
@@ -110,8 +125,13 @@ class FieldTagRepository(BaseRepository):
         created_at = self._now()
         with self.connection:
             self.connection.execute(
-                "INSERT INTO tags (id, name, created_at) VALUES (?, ?, ?)",
-                (tag_id, name, created_at),
+                """
+                INSERT INTO tags (
+                    id, workspace_id, name, parent_tag_id, path, depth, created_at
+                )
+                VALUES (?, ?, ?, NULL, ?, 0, ?)
+                """,
+                (tag_id, self.workspace_id, name, name, created_at),
             )
         tag = self.get_tag_by_name(name)
         if tag is None:
@@ -133,14 +153,14 @@ class FieldTagRepository(BaseRepository):
         with self.connection:
             self.connection.execute(
                 """
-                INSERT OR IGNORE INTO note_tags (note_id, tag_id, created_at)
-                VALUES (?, ?, ?)
+                INSERT OR IGNORE INTO note_tags (workspace_id, note_id, tag_id, created_at)
+                VALUES (?, ?, ?, ?)
                 """,
-                (note_id, tag.id, created_at),
+                (self.workspace_id, note_id, tag.id, created_at),
             )
         row = self.connection.execute(
-            "SELECT * FROM note_tags WHERE note_id = ? AND tag_id = ?",
-            (note_id, tag.id),
+            "SELECT * FROM note_tags WHERE workspace_id = ? AND note_id = ? AND tag_id = ?",
+            (self.workspace_id, note_id, tag.id),
         ).fetchone()
         if row is None:
             raise RecordNotFoundError("note_tags", f"{note_id}:{tag.id}")
@@ -161,8 +181,8 @@ class FieldTagRepository(BaseRepository):
             return
         with self.connection:
             self.connection.execute(
-                "DELETE FROM note_tags WHERE note_id = ? AND tag_id = ?",
-                (note_id, tag.id),
+                "DELETE FROM note_tags WHERE workspace_id = ? AND note_id = ? AND tag_id = ?",
+                (self.workspace_id, note_id, tag.id),
             )
 
     def list_note_tags(self, note_id: str) -> list[TagRecord]:
@@ -178,10 +198,13 @@ class FieldTagRepository(BaseRepository):
             """
             SELECT tags.*
             FROM tags
-            JOIN note_tags ON note_tags.tag_id = tags.id
-            WHERE note_tags.note_id = ?
+            JOIN note_tags
+              ON note_tags.workspace_id = tags.workspace_id
+             AND note_tags.tag_id = tags.id
+            WHERE note_tags.workspace_id = ?
+              AND note_tags.note_id = ?
             ORDER BY tags.name ASC
             """,
-            (note_id,),
+            (self.workspace_id, note_id),
         ).fetchall()
         return [self._row_to_model(row, TagRecord) for row in rows]

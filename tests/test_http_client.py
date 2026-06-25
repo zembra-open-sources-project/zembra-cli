@@ -7,6 +7,8 @@ import pytest
 
 from zembra_cli.http_client import HttpZembraRepository, ZembraHttpClientError
 
+TEST_WORKSPACE_ID = "550e8400-e29b-41d4-a716-446655440000"
+
 
 def make_client(handler) -> httpx.Client:
     """Create an httpx client backed by a mock transport.
@@ -35,6 +37,7 @@ def note_payload(content: str = "hello", note_id: str = "abcd0000000000000000000
     """
     return {
         "id": note_id,
+        "workspace_id": TEST_WORKSPACE_ID,
         "content": content,
         "role": "Human",
         "field_id": "field-1",
@@ -43,6 +46,42 @@ def note_payload(content: str = "hello", note_id: str = "abcd0000000000000000000
         "archived_at": None,
         "deleted_at": None,
         "current_revision_id": None,
+        "last_change_id": None,
+        "conflict_status": "none",
+    }
+
+
+def field_payload(name: str = "work", field_id: str = "field-1") -> dict:
+    """Create a valid field response object.
+
+    Args:
+        name: Field name to include.
+        field_id: Field identifier to include.
+
+    Returns:
+        JSON-serializable field response.
+    """
+    return {"id": field_id, "workspace_id": TEST_WORKSPACE_ID, "name": name, "created_at": 1}
+
+
+def tag_payload(name: str = "cli", tag_id: str = "tag-1") -> dict:
+    """Create a valid root tag response object.
+
+    Args:
+        name: Tag name to include.
+        tag_id: Tag identifier to include.
+
+    Returns:
+        JSON-serializable tag response.
+    """
+    return {
+        "id": tag_id,
+        "workspace_id": TEST_WORKSPACE_ID,
+        "name": name,
+        "parent_tag_id": None,
+        "path": name,
+        "depth": 0,
+        "created_at": 1,
     }
 
 
@@ -114,7 +153,7 @@ def test_http_repository_lists_tags_and_fields() -> None:
             return httpx.Response(
                 200,
                 json={
-                    "tags": [{"id": "tag-1", "name": "cli", "created_at": 1}],
+                    "tags": [tag_payload()],
                     "names": ["cli"],
                 },
             )
@@ -122,7 +161,7 @@ def test_http_repository_lists_tags_and_fields() -> None:
         return httpx.Response(
             200,
             json={
-                "fields": [{"id": "field-1", "name": "work", "created_at": 1}],
+                "fields": [field_payload()],
                 "names": ["work"],
             },
         )
@@ -186,14 +225,14 @@ def test_http_repository_random_notes_enriches_metadata() -> None:
             return httpx.Response(
                 200,
                 json={
-                    "fields": [{"id": "field-1", "name": "work", "created_at": 1}],
+                    "fields": [field_payload()],
                     "names": ["work"],
                 },
             )
         if request.url.path == "/notes/abcd0000000000000000000000000000/tags":
             return httpx.Response(
                 200,
-                json={"tags": [{"id": "tag-1", "name": "cli", "created_at": 1}]},
+                json={"tags": [tag_payload()]},
             )
         return httpx.Response(404, json={"error": {"message": "missing", "code": "missing"}})
 
@@ -235,7 +274,7 @@ def test_http_repository_random_tagged_notes_parses_groups() -> None:
                 json={
                     "tagged_notes": [
                         {
-                            "tag": {"id": "tag-1", "name": "cli", "created_at": 1},
+                            "tag": tag_payload(),
                             "notes": [note_payload("tagged")],
                         }
                     ]
@@ -245,14 +284,14 @@ def test_http_repository_random_tagged_notes_parses_groups() -> None:
             return httpx.Response(
                 200,
                 json={
-                    "fields": [{"id": "field-1", "name": "work", "created_at": 1}],
+                    "fields": [field_payload()],
                     "names": ["work"],
                 },
             )
         if request.url.path == "/notes/abcd0000000000000000000000000000/tags":
             return httpx.Response(
                 200,
-                json={"tags": [{"id": "tag-1", "name": "cli", "created_at": 1}]},
+                json={"tags": [tag_payload()]},
             )
         return httpx.Response(404, json={"error": {"message": "missing", "code": "missing"}})
 
@@ -294,7 +333,7 @@ def test_http_repository_random_field_notes_parses_groups() -> None:
                 json={
                     "field_notes": [
                         {
-                            "field": {"id": "field-1", "name": "work", "created_at": 1},
+                            "field": field_payload(),
                             "notes": [note_payload("field note")],
                         }
                     ]

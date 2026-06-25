@@ -40,6 +40,8 @@ zembra-cli init --database /path/to/zembra.sqlite3
 
 The default CLI config file is `~/.zembra/config.cli.toml`. Existing `~/.zembra.env` files are still read as a lower-priority fallback when a field is missing from the CLI config.
 
+Direct mode stores the current workspace in the CLI config. `zembra-cli init` generates a workspace UUID when `--workspace-id` is not supplied. Use `--workspace-name` only when a display name should be stored; otherwise the config omits the name and the database stores `NULL`.
+
 ## Basic Usage
 
 Create a note:
@@ -140,3 +142,5 @@ The shared data contract lives in the `vendor/zembra-schema` submodule. After a 
 ```bash
 git submodule update --init --recursive
 ```
+
+This repository currently consumes the latest shared schema submodule pointer, described by `vendor/zembra-schema` tag `0.5.1` and unified schema contract version `0.5.0`.

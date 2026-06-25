@@ -75,6 +75,10 @@ def open_mcp_repository(config_path: str | Path | None = None) -> Iterator[Zembr
         raise ZembraMcpError("MCP Server requires direct database mode.")
     if config.database_path is None:
         raise ZembraMcpError("Database path is missing in the zembra config.")
+    if config.workspace_id is None:
+        raise ZembraMcpError(
+            "Workspace ID is missing in the zembra CLI config. Run: zembra-cli init"
+        )
 
     database_path = config.database_path.expanduser()
     if not database_path.exists():
@@ -85,7 +89,7 @@ def open_mcp_repository(config_path: str | Path | None = None) -> Iterator[Zembr
             missing_tables = missing_core_tables(connection)
             if missing_tables:
                 raise ZembraMcpError(f"Database is not initialized at {database_path}")
-            yield ZembraRepository(connection)
+            yield ZembraRepository(connection, workspace_id=config.workspace_id)
     except sqlite3.Error as error:
         raise ZembraMcpError(f"Could not open the Zembra database: {error}") from error
 

@@ -12,6 +12,7 @@ from zembra_cli.config import (
     ConfigHttpBaseUrlMissingError,
     ConfigParentMissingError,
     ConfigParseError,
+    ConfigWorkspaceIdMissingError,
     ZembraConfig,
     default_cli_config_path,
     default_global_config_path,
@@ -48,13 +49,18 @@ def test_load_cascading_config_reads_database_path(tmp_path) -> None:
     config_path = tmp_path / ".zembra.env"
     database_path = tmp_path / "zembra.sqlite3"
     config_path.write_text(
-        f'[cli]\nmode = "direct"\n\n[database]\npath = "{database_path}"\n',
+        f'[cli]\nmode = "direct"\n\n[database]\npath = "{database_path}"\n\n'
+        '[workspace]\nid = "550e8400-e29b-41d4-a716-446655440000"\n',
         encoding="utf-8",
     )
 
     config = load_cascading_config(config_path, tmp_path / "missing.env")
 
-    assert config == ZembraConfig(cli_mode="direct", database_path=database_path)
+    assert config == ZembraConfig(
+        cli_mode="direct",
+        database_path=database_path,
+        workspace_id="550e8400-e29b-41d4-a716-446655440000",
+    )
 
 
 def test_load_cascading_config_reads_http_mode(tmp_path) -> None:
@@ -92,7 +98,8 @@ def test_load_cascading_config_reads_cli_config_first(tmp_path) -> None:
     global_database_path = tmp_path / "global.sqlite3"
     cli_config_path.parent.mkdir()
     cli_config_path.write_text(
-        f'[cli]\nmode = "direct"\n\n[database]\npath = "{cli_database_path}"\n',
+        f'[cli]\nmode = "direct"\n\n[database]\npath = "{cli_database_path}"\n\n'
+        '[workspace]\nid = "550e8400-e29b-41d4-a716-446655440000"\nname = "Work"\n',
         encoding="utf-8",
     )
     global_config_path.write_text(
@@ -103,7 +110,12 @@ def test_load_cascading_config_reads_cli_config_first(tmp_path) -> None:
 
     config = load_cascading_config(cli_config_path, global_config_path)
 
-    assert config == ZembraConfig(cli_mode="direct", database_path=cli_database_path)
+    assert config == ZembraConfig(
+        cli_mode="direct",
+        database_path=cli_database_path,
+        workspace_id="550e8400-e29b-41d4-a716-446655440000",
+        workspace_name="Work",
+    )
 
 
 def test_load_cascading_config_falls_back_to_global_config(tmp_path) -> None:
@@ -123,9 +135,8 @@ def test_load_cascading_config_falls_back_to_global_config(tmp_path) -> None:
         encoding="utf-8",
     )
 
-    config = load_cascading_config(cli_config_path, global_config_path)
-
-    assert config == ZembraConfig(cli_mode="direct", database_path=database_path)
+    with pytest.raises(ConfigWorkspaceIdMissingError, match="Workspace ID is missing"):
+        load_cascading_config(cli_config_path, global_config_path)
 
 
 def test_load_cascading_config_merges_missing_database_path_from_global(tmp_path) -> None:
@@ -141,7 +152,10 @@ def test_load_cascading_config_merges_missing_database_path_from_global(tmp_path
     global_config_path = tmp_path / ".zembra.env"
     database_path = tmp_path / "global.sqlite3"
     cli_config_path.parent.mkdir()
-    cli_config_path.write_text('[cli]\nmode = "direct"\n', encoding="utf-8")
+    cli_config_path.write_text(
+        '[cli]\nmode = "direct"\n\n[workspace]\nid = "workspace-1"\n',
+        encoding="utf-8",
+    )
     global_config_path.write_text(
         f'[database]\npath = "{database_path}"\n',
         encoding="utf-8",
@@ -149,7 +163,34 @@ def test_load_cascading_config_merges_missing_database_path_from_global(tmp_path
 
     config = load_cascading_config(cli_config_path, global_config_path)
 
-    assert config == ZembraConfig(cli_mode="direct", database_path=database_path)
+    assert config == ZembraConfig(
+        cli_mode="direct",
+        database_path=database_path,
+        workspace_id="workspace-1",
+    )
+
+
+def test_load_cascading_config_does_not_merge_workspace_from_global(tmp_path) -> None:
+    """Verify workspace config is read only from the CLI config file.
+
+    Args:
+        tmp_path: Pytest temporary directory fixture.
+
+    Returns:
+        None.
+    """
+    cli_config_path = tmp_path / ".zembra" / "config.cli.toml"
+    global_config_path = tmp_path / ".zembra.env"
+    database_path = tmp_path / "global.sqlite3"
+    cli_config_path.parent.mkdir()
+    cli_config_path.write_text('[cli]\nmode = "direct"\n', encoding="utf-8")
+    global_config_path.write_text(
+        f'[database]\npath = "{database_path}"\n\n[workspace]\nid = "global-workspace"\n',
+        encoding="utf-8",
+    )
+
+    with pytest.raises(ConfigWorkspaceIdMissingError, match="Workspace ID is missing"):
+        load_cascading_config(cli_config_path, global_config_path)
 
 
 def test_load_cascading_config_merges_missing_http_base_url_from_global(tmp_path) -> None:
@@ -359,8 +400,18 @@ def test_write_database_path_can_set_direct_mode(tmp_path) -> None:
 
     write_database_path(database_path, config_path, set_direct_mode=True)
 
+    config_path.write_text(
+        config_path.read_text(encoding="utf-8")
+        + '\n[workspace]\nid = "550e8400-e29b-41d4-a716-446655440000"\n',
+        encoding="utf-8",
+    )
+
     config = load_cascading_config(config_path, tmp_path / "missing.env")
-    assert config == ZembraConfig(cli_mode="direct", database_path=database_path)
+    assert config == ZembraConfig(
+        cli_mode="direct",
+        database_path=database_path,
+        workspace_id="550e8400-e29b-41d4-a716-446655440000",
+    )
 
 
 def test_write_database_path_reports_missing_parent(tmp_path) -> None:

@@ -14,6 +14,8 @@ from zembra_cli.mcp_server import (
     random_notes_tool,
 )
 
+TEST_WORKSPACE_ID = "550e8400-e29b-41d4-a716-446655440000"
+
 
 def write_direct_config(tmp_path, database_path) -> object:
     """Write a direct-mode config for MCP tests.
@@ -27,7 +29,8 @@ def write_direct_config(tmp_path, database_path) -> object:
     """
     config_path = tmp_path / ".zembra.env"
     config_path.write_text(
-        f'[cli]\nmode = "direct"\n\n[database]\npath = "{database_path}"\n',
+        f'[cli]\nmode = "direct"\n\n[database]\npath = "{database_path}"\n\n'
+        f'[workspace]\nid = "{TEST_WORKSPACE_ID}"\n',
         encoding="utf-8",
     )
     return config_path
@@ -44,6 +47,13 @@ def initialize_test_database(database_path) -> None:
     """
     with database_connection(database_path) as connection:
         initialize_database(connection)
+        connection.execute(
+            """
+            INSERT INTO workspaces (id, workspace_name, created_at, updated_at)
+            VALUES (?, NULL, 1, 1)
+            """,
+            (TEST_WORKSPACE_ID,),
+        )
 
 
 def test_create_note_tool_defaults_to_agent_role(tmp_path) -> None:

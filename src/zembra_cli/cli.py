@@ -2,6 +2,8 @@
 
 import json
 import sqlite3
+import time
+import uuid
 from collections.abc import Iterator
 from contextlib import contextmanager
 from pathlib import Path
@@ -367,6 +369,33 @@ def require_initialized_database(database_path) -> None:
         fail_command(f"Database is not initialized at {database_path}")
 
 
+def ensure_workspace(database_path: Path, workspace_id: str, workspace_name: str | None) -> None:
+    """Create the configured workspace record when it is missing.
+
+    Args:
+        database_path: Initialized SQLite database path.
+        workspace_id: Workspace identifier to ensure.
+        workspace_name: Optional workspace display name to store on creation.
+
+    Returns:
+        None.
+    """
+    now = int(time.time())
+    try:
+        with database_connection(database_path) as connection:
+            connection.execute(
+                """
+                INSERT OR IGNORE INTO workspaces (
+                    id, workspace_name, created_at, updated_at
+                )
+                VALUES (?, ?, ?, ?)
+                """,
+                (workspace_id, workspace_name, now, now),
+            )
+    except sqlite3.Error as error:
+        fail_command(f"Could not initialize workspace {workspace_id}: {error}")
+
+
 @contextmanager
 def open_cli_repository() -> Iterator[tuple[CliRepository, str]]:
     """Open the repository configured for CLI database commands.
@@ -394,12 +423,14 @@ def open_cli_repository() -> Iterator[tuple[CliRepository, str]]:
 
     if config.database_path is None:
         fail_command("Database path is missing in the zembra config.")
+    if config.workspace_id is None:
+        fail_command("Workspace ID is missing in the zembra CLI config. Run: zembra-cli init")
     database_path = config.database_path.expanduser()
     require_initialized_database(database_path)
 
     try:
         with database_connection(database_path) as connection:
-            yield ZembraRepository(connection), str(database_path)
+            yield ZembraRepository(connection, workspace_id=config.workspace_id), str(database_path)
     except sqlite3.Error as error:
         fail_command(f"Could not open the Zembra database: {error}")
 
@@ -479,6 +510,20 @@ def init(
             help="SQLite database path to initialize and store in the zembra config.",
         ),
     ] = None,
+    workspace_id: Annotated[
+        str | None,
+        typer.Option(
+            "--workspace-id",
+            help="Workspace UUID to store in the zembra CLI config.",
+        ),
+    ] = None,
+    workspace_name: Annotated[
+        str | None,
+        typer.Option(
+            "--workspace-name",
+            help="Optional workspace display name to store on initialization.",
+        ),
+    ] = None,
 ) -> None:
     """Initialize the local zembra database and shared config.
 
@@ -493,13 +538,17 @@ def init(
     config_status = "updated" if config_path.exists() else "created"
 
     try:
+        resolved_workspace_id = workspace_id or str(uuid.uuid4())
         database_result = initialize_database_file(resolved_database_path)
         config_path.parent.mkdir(parents=True, exist_ok=True)
         config = write_database_path(
             database_result.database_path,
             config_path,
             set_direct_mode=True,
+            workspace_id=resolved_workspace_id,
+            workspace_name=workspace_name,
         )
+        ensure_workspace(database_result.database_path, resolved_workspace_id, workspace_name)
     except DatabaseInitializationError as error:
         fail_command(error.message)
     except ConfigError as error:
@@ -512,6 +561,7 @@ def init(
     typer.echo(f"Database: {database_result.database_path} ({database_status})")
     typer.echo(f"Config: {config_path} ({config_status})")
     typer.echo(f"Configured database path: {config.database_path}")
+    typer.echo(f"Workspace: {config.workspace_id}")
 
 
 @config_app.command()
