@@ -537,6 +537,9 @@ def test_workspaces_list_outputs_table(monkeypatch, tmp_path) -> None:
     assert "550e8400" in result.stdout
     assert "Work" in result.stdout
     assert TEST_WORKSPACE_ID in result.stdout
+    assert "1970-01-01 00:02:03 UTC" in result.stdout
+    assert "Latest Note" in result.stdout
+    assert "123" not in result.stdout
     assert "*" in result.stdout
 
 

@@ -7,6 +7,7 @@ import time
 import uuid
 from collections.abc import Callable, Iterator
 from contextlib import ExitStack, contextmanager
+from datetime import UTC, datetime
 from pathlib import Path
 from typing import Annotated, Literal
 
@@ -291,7 +292,9 @@ def format_workspace_latest_note(latest_note_created_at: int | None) -> str:
     Returns:
         Human-readable timestamp placeholder.
     """
-    return str(latest_note_created_at) if latest_note_created_at is not None else "-"
+    if latest_note_created_at is None:
+        return "-"
+    return datetime.fromtimestamp(latest_note_created_at, UTC).strftime("%Y-%m-%d %H:%M:%S UTC")
 
 
 def build_workspaces_table(
@@ -313,7 +316,7 @@ def build_workspaces_table(
     table.add_column("Name")
     table.add_column("Workspace ID", no_wrap=True, overflow="ignore")
     table.add_column("Notes", justify="right")
-    table.add_column("Latest Note")
+    table.add_column("Latest Note", no_wrap=True, overflow="ignore")
     for item in workspaces:
         table.add_row(
             "*" if item.workspace_id == default_workspace_id else "",
