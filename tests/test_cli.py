@@ -1661,18 +1661,29 @@ def test_run_command_starts_intro_and_interactive_session(tmp_path, monkeypatch)
     configure_cli_database(monkeypatch, tmp_path, database_path)
     calls: list[str] = []
 
-    def fake_render_intro(repository, output_console, rendered_database_path) -> None:
+    def fake_render_intro(
+        repository,
+        output_console,
+        rendered_database_path,
+        workspace_id,
+        http_backend_url,
+    ) -> None:
         """Record intro rendering without printing the full Rich panel.
 
         Args:
             repository: Repository created by the run command.
             output_console: Console supplied by the CLI.
             rendered_database_path: Database path passed to the intro renderer.
+            workspace_id: Workspace identifier passed to the intro renderer.
+            http_backend_url: HTTP backend URL passed to the intro renderer.
 
         Returns:
             None.
         """
-        calls.append(f"intro:{rendered_database_path}:{len(repository.list_notes())}")
+        calls.append(
+            f"intro:{rendered_database_path}:{workspace_id}:{http_backend_url}:"
+            f"{len(repository.list_notes())}"
+        )
 
     def fake_run_interactive_session(repository, output_console) -> None:
         """Record interactive session startup without blocking for input.
@@ -1692,7 +1703,69 @@ def test_run_command_starts_intro_and_interactive_session(tmp_path, monkeypatch)
     result = runner.invoke(app, ["run"])
 
     assert result.exit_code == 0
-    assert calls == [f"intro:{database_path}:0", "session:0"]
+    assert calls == [
+        f"intro:{database_path}:{TEST_WORKSPACE_ID}:None:0",
+        "session:0",
+    ]
+
+
+def test_run_command_passes_http_backend_url_to_intro(tmp_path, monkeypatch) -> None:
+    """Verify run exposes configured HTTP backend context to the intro renderer.
+
+    Args:
+        tmp_path: Pytest temporary directory fixture.
+        monkeypatch: Pytest monkeypatch fixture.
+
+    Returns:
+        None.
+    """
+    configure_cli_http(monkeypatch, tmp_path, base_url="http://backend.test")
+    calls: list[str] = []
+
+    def fake_render_intro(
+        repository,
+        output_console,
+        rendered_location,
+        workspace_id,
+        http_backend_url,
+    ) -> None:
+        """Record intro context without touching the HTTP repository.
+
+        Args:
+            repository: Repository created by the run command.
+            output_console: Console supplied by the CLI.
+            rendered_location: Repository location passed to the intro renderer.
+            workspace_id: Workspace identifier passed to the intro renderer.
+            http_backend_url: HTTP backend URL passed to the intro renderer.
+
+        Returns:
+            None.
+        """
+        calls.append(f"intro:{rendered_location}:{workspace_id}:{http_backend_url}")
+
+    def fake_run_interactive_session(repository, output_console) -> None:
+        """Record interactive session startup without blocking for input.
+
+        Args:
+            repository: Repository created by the run command.
+            output_console: Console supplied by the CLI.
+
+        Returns:
+            None.
+        """
+        calls.append("session")
+
+    monkeypatch.setattr(cli, "render_intro_for_repository", fake_render_intro)
+    monkeypatch.setattr(cli, "run_interactive_session", fake_run_interactive_session)
+
+    result = runner.invoke(app, ["run"])
+
+    assert result.exit_code == 0
+    assert calls == [
+        "intro:http://backend.test (fallback: unconfigured):"
+        f"{TEST_WORKSPACE_ID}:http://backend.test",
+        "session",
+    ]
 
 
 def test_hello_command_does_not_require_config(tmp_path, monkeypatch) -> None:

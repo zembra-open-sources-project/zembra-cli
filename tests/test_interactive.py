@@ -180,11 +180,19 @@ def test_render_intro_includes_database_path_and_stats() -> None:
     """
     console = record_console()
 
-    render_intro(console, Path("/tmp/zembra.sqlite3"), note_count=12)
+    render_intro(
+        console,
+        Path("/tmp/zembra.sqlite3"),
+        note_count=12,
+        workspace_id="550e8400-e29b-41d4-a716-446655440000",
+        http_backend_url="http://backend.test",
+    )
 
     output = console.export_text()
     assert "Zembra" in output
     assert "/tmp/zembra.sqlite3" in output
+    assert "550e8400-e29b-41d4-a716-446655440000" in output
+    assert "http://backend.test" in output
     assert "12" in output
     assert DEFAULT_INTERACTIVE_FIELD in output
 

@@ -148,13 +148,21 @@ class SlashCommandCompleter(Completer):
             )
 
 
-def render_intro(console: Console, repository_location: str | Path, note_count: int) -> None:
+def render_intro(
+    console: Console,
+    repository_location: str | Path,
+    note_count: int,
+    workspace_id: str,
+    http_backend_url: str | None,
+) -> None:
     """Render the interactive startup screen.
 
     Args:
         console: Rich console used for terminal output.
         repository_location: Configured repository location.
         note_count: Number of active notes in the database.
+        workspace_id: Configured workspace identifier for this session.
+        http_backend_url: Configured HTTP backend URL, if HTTP mode is enabled.
 
     Returns:
         None.
@@ -182,6 +190,8 @@ def render_intro(console: Console, repository_location: str | Path, note_count: 
         else repository_location
     )
     stats_table.add_row("Database", location)
+    stats_table.add_row("Workspace UUID", workspace_id)
+    stats_table.add_row("HTTP backend URL", http_backend_url or "not configured")
     stats_table.add_row("Notes", str(note_count))
     stats_table.add_row("Default field", DEFAULT_INTERACTIVE_FIELD)
 
@@ -300,6 +310,8 @@ def render_intro_for_repository(
     repository: CliRepository,
     console: Console,
     repository_location: str | Path,
+    workspace_id: str,
+    http_backend_url: str | None,
 ) -> None:
     """Render startup intro using repository-backed statistics.
 
@@ -307,8 +319,16 @@ def render_intro_for_repository(
         repository: Repository used to read note statistics.
         console: Rich console used for terminal output.
         repository_location: Configured repository location.
+        workspace_id: Configured workspace identifier for this session.
+        http_backend_url: Configured HTTP backend URL, if HTTP mode is enabled.
 
     Returns:
         None.
     """
-    render_intro(console, repository_location, len(repository.list_notes()))
+    render_intro(
+        console,
+        repository_location,
+        len(repository.list_notes()),
+        workspace_id,
+        http_backend_url,
+    )

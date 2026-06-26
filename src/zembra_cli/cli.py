@@ -709,6 +709,26 @@ def open_cli_repository() -> Iterator[tuple[CliRepository, str]]:
     Returns:
         A context manager yielding the repository and a human-readable location.
     """
+    with open_cli_repository_context() as (
+        repository,
+        location,
+        _workspace_id,
+        _http_backend_url,
+    ):
+        yield repository, location
+
+
+@contextmanager
+def open_cli_repository_context() -> Iterator[tuple[CliRepository, str, str, str | None]]:
+    """Open the repository with extra startup context for the run command.
+
+    Args:
+        None.
+
+    Returns:
+        A context manager yielding the repository, human-readable location, workspace id, and
+        HTTP backend URL.
+    """
     try:
         config = load_cascading_config(default_cli_config_path(), default_global_config_path())
     except ConfigError as error:
@@ -744,7 +764,7 @@ def open_cli_repository() -> Iterator[tuple[CliRepository, str]]:
             return direct_repository
 
         if config.http_base_url is None:
-            yield open_direct_repository(), str(config.database_path)
+            yield open_direct_repository(), str(config.database_path), config.workspace_id, None
             return
 
         http_repository = HttpZembraRepository(
@@ -760,7 +780,12 @@ def open_cli_repository() -> Iterator[tuple[CliRepository, str]]:
             open_direct_repository,
             fallback_location,
         )
-        yield repository, f"{config.http_base_url} (fallback: {fallback_location})"
+        yield (
+            repository,
+            f"{config.http_base_url} (fallback: {fallback_location})",
+            config.workspace_id,
+            config.http_base_url,
+        )
 
 
 def version_callback(value: bool) -> None:
@@ -1279,8 +1304,19 @@ def run() -> None:
         None. The command exits when the user enters /exit or sends EOF.
     """
     try:
-        with open_cli_repository() as (repository, location):
-            render_intro_for_repository(repository, console, location)
+        with open_cli_repository_context() as (
+            repository,
+            location,
+            workspace_id,
+            http_backend_url,
+        ):
+            render_intro_for_repository(
+                repository,
+                console,
+                location,
+                workspace_id,
+                http_backend_url,
+            )
             run_interactive_session(repository, console)
     except ZembraHttpClientError as error:
         fail_command(error.message)
