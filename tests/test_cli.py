@@ -1053,6 +1053,10 @@ def test_add_command_falls_back_to_direct_after_http_error(tmp_path, monkeypatch
     payload = json.loads(result.stdout)
     assert payload["note"]["content"] == "fallback note"
     assert FakeHttpRepository.instances[0].base_url == "http://backend.test"
+    assert (
+        f"HTTP backend unavailable; falling back to local database: {database_path}"
+        in result.stderr
+    )
 
 
 def test_config_database_command_writes_config(tmp_path, monkeypatch) -> None:

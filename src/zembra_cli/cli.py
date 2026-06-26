@@ -404,26 +404,32 @@ class HttpFirstFallbackRepository:
     Attributes:
         http_repository: Repository used for first-attempt HTTP operations.
         direct_repository_factory: Callable that opens the fallback direct repository.
+        fallback_location: Human-readable direct database location.
         direct_repository: Lazily opened direct repository.
+        fallback_notified: Whether the user-facing fallback message was already printed.
     """
 
     def __init__(
         self,
         http_repository: CliRepository,
         direct_repository_factory: Callable[[], CliRepository],
+        fallback_location: str,
     ) -> None:
         """Initialize the HTTP-first fallback repository.
 
         Args:
             http_repository: Repository used for first-attempt HTTP operations.
             direct_repository_factory: Callable that opens the direct fallback repository.
+            fallback_location: Human-readable direct database location.
 
         Returns:
             None.
         """
         self.http_repository = http_repository
         self.direct_repository_factory = direct_repository_factory
+        self.fallback_location = fallback_location
         self.direct_repository: CliRepository | None = None
+        self.fallback_notified = False
 
     def create_note(
         self,
@@ -538,8 +544,26 @@ class HttpFirstFallbackRepository:
             return method(*args, **kwargs)
         except ZembraHttpClientError as error:
             logger.warning("HTTP repository failed; falling back to direct SQLite: %s", error)
+            self._notify_fallback()
             direct_method = getattr(self._direct_repository(), method_name)
             return direct_method(*args, **kwargs)
+
+    def _notify_fallback(self) -> None:
+        """Print one user-facing fallback message per repository instance.
+
+        Args:
+            None.
+
+        Returns:
+            None.
+        """
+        if self.fallback_notified:
+            return
+        typer.echo(
+            f"HTTP backend unavailable; falling back to local database: {self.fallback_location}",
+            err=True,
+        )
+        self.fallback_notified = True
 
     def _direct_repository(self) -> CliRepository:
         """Return the lazily opened direct repository.
@@ -608,9 +632,13 @@ def open_cli_repository() -> Iterator[tuple[CliRepository, str]]:
             workspace_id=config.workspace_id,
         )
         stack.callback(http_repository.close)
-        repository = HttpFirstFallbackRepository(http_repository, open_direct_repository)
         fallback_location = (
             str(config.database_path) if config.database_path is not None else "unconfigured"
+        )
+        repository = HttpFirstFallbackRepository(
+            http_repository,
+            open_direct_repository,
+            fallback_location,
         )
         yield repository, f"{config.http_base_url} (fallback: {fallback_location})"
 

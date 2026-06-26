@@ -22,7 +22,7 @@
 
 修改：`src/zembra_cli/cli.py`、`tests/test_cli.py`
 
-验证：有 `http_base_url` 时优先调用 HTTP repository；HTTP repository 抛出 `ZembraHttpClientError` 时自动打开 direct repository 并重试。
+验证：有 `http_base_url` 时优先调用 HTTP repository；HTTP repository 抛出 `ZembraHttpClientError` 时自动打开 direct repository 并重试，同时 stderr 输出回退提示。
 
 ## Stage 2：文档与整体验证
 
@@ -47,3 +47,5 @@
 2026-06-26：已运行 `uv run pytest -q`，146 个测试通过。
 
 2026-06-26：已运行 `uv run ruff check .`，检查通过。
+
+2026-06-26：根据用户反馈补充 HTTP 回退时的 stderr 提示，已运行 `uv run pytest tests/test_cli.py::test_add_command_falls_back_to_direct_after_http_error tests/test_config.py tests/test_cli.py -q`，71 个测试通过；已运行 `uv run pytest -q`，146 个测试通过；已运行 `uv run ruff check .`，检查通过。

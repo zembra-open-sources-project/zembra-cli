@@ -12,6 +12,7 @@
 | --- | --- |
 | 连接选择 | CLI 命令优先使用 `cli.http_base_url` 指向的 HTTP backend |
 | 回退策略 | HTTP repository 操作抛出 HTTP client 错误后，自动使用配置中的 `database.path` 打开本地 SQLite repository 重试同一个操作 |
+| 回退提示 | 发生 HTTP 到本地 SQLite 回退时，CLI 需要打印用户可见提示 |
 | 配置模式 | `cli.mode` 不再作为必填字段，也不再决定 CLI 命令使用 HTTP 或 direct |
 | 旧配置兼容 | 如果旧配置仍包含 `cli.mode = "direct"` 或 `cli.mode = "http"`，读取时允许保留；非法值继续报错，避免静默吞掉拼写错误 |
 | 缺少 HTTP 地址 | 没有 `cli.http_base_url` 时直接使用本地数据库，不视为错误 |
@@ -32,6 +33,7 @@
 | --- | --- |
 | 配置同时包含 `cli.http_base_url`、`database.path` 和 `workspace.id` | CLI 命令优先调用 HTTP repository |
 | HTTP repository 抛出 `ZembraHttpClientError` 且本地数据库可用 | CLI 自动回退 direct repository，并完成同一个命令 |
+| HTTP 发生回退 | stderr 输出已回退到本地数据库及数据库路径，stdout 保持原命令输出 |
 | 配置只有 `database.path` 和 `workspace.id` | CLI 使用 direct repository，不要求 `cli.mode` |
 | 配置只有 `cli.http_base_url` 和 `workspace.id` | HTTP 成功时可运行；HTTP 失败时报数据库路径缺失 |
 | 配置包含非法 `cli.mode` | 继续返回 mode 非法配置错误 |
