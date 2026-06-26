@@ -280,6 +280,7 @@ def load_workspace_command_config(
         raise CascadingConfigMissingError(cli_path, global_path)
 
     merged_data = _merge_config_data(global_data or {}, cli_data or {})
+    _merge_workspace_backend_server_config(merged_data, global_data or {}, cli_data or {})
     if isinstance(cli_data, dict):
         workspace_section = cli_data.get("workspace")
         if isinstance(workspace_section, dict):
@@ -473,6 +474,56 @@ def _merged_section(
         elif field_name in global_section:
             merged[field_name] = global_section[field_name]
     return merged
+
+
+def _merge_workspace_backend_server_config(
+    merged_data: dict[str, Any],
+    global_data: dict[str, Any],
+    cli_data: dict[str, Any],
+) -> None:
+    """Populate workspace backend URL from configured server host and port when needed.
+
+    Args:
+        merged_data: Config data already merged from CLI and global supported fields.
+        global_data: Parsed global fallback config.
+        cli_data: Parsed CLI-specific config.
+
+    Returns:
+        None. ``merged_data`` is updated in place when server config is usable.
+    """
+    cli_section = merged_data.get("cli")
+    if isinstance(cli_section, dict) and cli_section.get("http_base_url"):
+        return
+
+    server_url = _server_base_url_from_data(cli_data) or _server_base_url_from_data(global_data)
+    if server_url is None:
+        return
+
+    if not isinstance(cli_section, dict):
+        cli_section = {}
+        merged_data["cli"] = cli_section
+    cli_section["http_base_url"] = server_url
+
+
+def _server_base_url_from_data(data: dict[str, Any]) -> str | None:
+    """Build a backend base URL from a TOML ``server`` section.
+
+    Args:
+        data: Parsed TOML configuration data.
+
+    Returns:
+        HTTP base URL when both server host and port are configured.
+    """
+    server_section = data.get("server")
+    if not isinstance(server_section, dict):
+        return None
+
+    raw_host = server_section.get("host")
+    raw_port = server_section.get("port")
+    host = raw_host.strip() if isinstance(raw_host, str) else None
+    if not host or not isinstance(raw_port, int):
+        return None
+    return f"http://{host}:{raw_port}"
 
 
 def _config_from_data(data: dict[str, Any]) -> ZembraConfig:

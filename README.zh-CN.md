@@ -85,7 +85,7 @@ zembra-cli workspaces list --json
 zembra-cli workspaces set-default 550e8400
 ```
 
-workspace 命令只从合并配置中的 `cli.http_base_url` 读取后端地址，不使用默认 URL。`set-default` 接受完整 workspace ID、短 hash 前缀或精确 workspace 名称，然后把选中的 workspace 写入 `~/.zembra/config.cli.toml`。
+workspace 命令只从配置读取后端地址，不使用默认 URL。命令优先读取级联合并后的 `cli.http_base_url`，也可以使用配置中的 `server.host` 和 `server.port` 组装后端地址。`set-default` 接受完整 workspace ID、短 hash 前缀或精确 workspace 名称，然后把选中的 workspace 写入 `~/.zembra/config.cli.toml`。
 
 ## HTTP 模式
 

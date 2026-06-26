@@ -13,7 +13,7 @@
 | 命令组 | 新增 `zembra-cli workspaces` |
 | 列表命令 | `zembra-cli workspaces list` 动态请求后端 workspace 列表 |
 | 默认 workspace 命令 | `zembra-cli workspaces set-default <hash-or-name>` 根据输入匹配 workspace 并写入 CLI 配置 |
-| 后端地址来源 | 只允许从配置读取 `cli.http_base_url`，未配置时命令报错，不写死任何默认 URL |
+| 后端地址来源 | 只允许从配置读取后端地址；优先使用级联配置中的 `cli.http_base_url`，缺失时使用配置中的 `server.host` 和 `server.port` 组装 URL；两者都缺失时命令报错，不写死任何默认 URL |
 | 列表接口 | 使用当前后端的 `GET /workspaces` |
 | 后端响应字段 | 使用 `workspace_id`、`workspace_name`、`short_hash`、`visible_note_count`、`latest_note_created_at` |
 | 默认输出 | `workspaces list` 默认使用表格输出 |
@@ -37,7 +37,8 @@
 | 场景 | 预期 |
 | --- | --- |
 | 配置存在 `cli.http_base_url` | `workspaces list` 请求该地址的 `/workspaces` 并展示结果 |
-| 配置缺少 `cli.http_base_url` | `workspaces list` 和 `set-default` 失败，提示需要配置后端地址 |
+| 配置存在 `server.host` 和 `server.port` | `workspaces list` 组装配置中的后端 URL 并请求 `/workspaces` |
+| 配置缺少可用后端地址 | `workspaces list` 和 `set-default` 失败，提示需要配置后端地址 |
 | 默认表格输出 | 展示短 hash、名称、完整 ID、可见 note 数、最近 note 时间和默认标记 |
 | JSON 输出 | `workspaces list --json` 输出 JSON，不混入表格文本 |
 | 当前默认存在于列表中 | 表格和 JSON 均标记该 workspace 为默认 |
@@ -55,4 +56,4 @@
 - 不实现本地 SQLite 直连读取 workspace 列表。
 - 不改变 note、field、tag 等业务命令的 workspace 隔离逻辑。
 - 不改变后端 `/workspaces` 接口。
-- 不自动补写或猜测 `cli.http_base_url`。
+- 不自动补写或猜测后端 URL。

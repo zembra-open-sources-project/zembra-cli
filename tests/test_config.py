@@ -510,6 +510,61 @@ def test_load_workspace_command_config_requires_http_base_url(tmp_path) -> None:
         load_workspace_command_config(cli_config_path, global_config_path)
 
 
+def test_load_workspace_command_config_reads_global_server_url(tmp_path) -> None:
+    """Verify workspace commands can derive the backend URL from global server config.
+
+    Args:
+        tmp_path: Pytest temporary directory fixture.
+
+    Returns:
+        None.
+    """
+    cli_config_path = tmp_path / ".zembra" / "config.cli.toml"
+    global_config_path = tmp_path / ".zembra.env"
+    cli_config_path.parent.mkdir()
+    cli_config_path.write_text(
+        '[workspace]\nid = "workspace-1"\n',
+        encoding="utf-8",
+    )
+    global_config_path.write_text(
+        '[server]\nhost = "127.0.0.1"\nport = 3000\n',
+        encoding="utf-8",
+    )
+
+    config = load_workspace_command_config(cli_config_path, global_config_path)
+
+    assert config.http_base_url == "http://127.0.0.1:3000"
+    assert config.workspace_id == "workspace-1"
+
+
+def test_load_workspace_command_config_prefers_cli_http_base_url_over_server(
+    tmp_path,
+) -> None:
+    """Verify explicit CLI backend URLs override server host and port config.
+
+    Args:
+        tmp_path: Pytest temporary directory fixture.
+
+    Returns:
+        None.
+    """
+    cli_config_path = tmp_path / ".zembra" / "config.cli.toml"
+    global_config_path = tmp_path / ".zembra.env"
+    cli_config_path.parent.mkdir()
+    cli_config_path.write_text(
+        '[cli]\nhttp_base_url = "http://cli.test"\n',
+        encoding="utf-8",
+    )
+    global_config_path.write_text(
+        '[server]\nhost = "127.0.0.1"\nport = 3000\n',
+        encoding="utf-8",
+    )
+
+    config = load_workspace_command_config(cli_config_path, global_config_path)
+
+    assert config.http_base_url == "http://cli.test"
+
+
 def test_write_default_workspace_updates_workspace_and_preserves_config(tmp_path) -> None:
     """Verify default workspace writing preserves unrelated config fields.
 

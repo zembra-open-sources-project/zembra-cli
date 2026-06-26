@@ -6,7 +6,7 @@
 
 ## 核心功能（WHAT）
 
-新增 `zembra-cli workspaces` 命令组，提供 `list` 和 `set-default` 两个子命令。`list` 通过配置中的 `cli.http_base_url` 请求后端 `GET /workspaces`，默认以表格展示所有 workspace，并支持 `--json` 输出。`set-default <hash-or-name>` 使用同一接口查询可选 workspace，根据完整 `workspace_id`、`short_hash` 前缀或 `workspace_name` 精确匹配唯一 workspace，并把结果写入 `~/.zembra/config.cli.toml` 的 `[workspace]` 配置。
+新增 `zembra-cli workspaces` 命令组，提供 `list` 和 `set-default` 两个子命令。`list` 通过配置中的后端地址请求 `GET /workspaces`，默认以表格展示所有 workspace，并支持 `--json` 输出。`set-default <hash-or-name>` 使用同一接口查询可选 workspace，根据完整 `workspace_id`、`short_hash` 前缀或 `workspace_name` 精确匹配唯一 workspace，并把结果写入 `~/.zembra/config.cli.toml` 的 `[workspace]` 配置。
 
 ### 需求背景（WHY）
 
@@ -14,14 +14,14 @@
 
 ### 需求目标（GOAL）
 
-本需求目标是在不改变既有 note、field、tag 命令语义的前提下，让用户可以通过 `zembra-cli workspaces list` 查看后端所有 workspace，并通过 `zembra-cli workspaces set-default <hash-or-name>` 安全更新 CLI 默认 workspace。命令必须只从配置读取后端地址，配置缺少 `cli.http_base_url` 时直接报错，不写死任何默认 URL。
+本需求目标是在不改变既有 note、field、tag 命令语义的前提下，让用户可以通过 `zembra-cli workspaces list` 查看后端所有 workspace，并通过 `zembra-cli workspaces set-default <hash-or-name>` 安全更新 CLI 默认 workspace。命令必须只从配置读取后端地址，配置缺少可用后端地址时直接报错，不写死任何默认 URL。
 
 ### 范围边界
 
 | 类别 | 设计结论 |
 | --- | --- |
 | 新增命令 | `zembra-cli workspaces list`、`zembra-cli workspaces set-default <hash-or-name>` |
-| 后端地址 | 只读取合并配置中的 `cli.http_base_url` |
+| 后端地址 | 优先读取级联合并后的 `cli.http_base_url`；缺失时读取配置中的 `server.host` 和 `server.port` 组装 URL |
 | 后端接口 | 使用 `GET /workspaces` |
 | 输出形态 | `list` 默认 Rich 表格，`--json` 输出 JSON |
 | 当前默认标记 | 基于配置中的 `workspace.id` 标记，不要求当前默认一定存在于后端列表 |
@@ -54,7 +54,7 @@ HTTP 响应校验保持当前 `HttpZembraRepository` 的风格：顶层必须包
 
 ### CLI 命令
 
-在 `src/zembra_cli/cli.py` 新增 `workspaces_app = typer.Typer(...)` 并注册到主 app。新增辅助函数读取配置并打开 workspace HTTP 客户端：先调用 `load_cascading_config(default_cli_config_path(), default_global_config_path())`，如果 `http_base_url` 缺失则失败并提示需要配置 `cli.http_base_url`，如果 workspace ID 缺失则允许 `list` 继续展示但无法标记默认值；考虑当前配置加载函数会要求 workspace ID，本轮实现需要增加一个只读取 HTTP backend 地址和可选 workspace 的配置读取路径，避免 `workspaces list` 在没有默认 workspace 时无法列出可选项。
+在 `src/zembra_cli/cli.py` 新增 `workspaces_app = typer.Typer(...)` 并注册到主 app。新增辅助函数读取配置并打开 workspace HTTP 客户端：先调用 workspace 命令专用配置读取函数，从 CLI 配置和全局配置级联读取后端地址；优先使用 `cli.http_base_url`，缺失时使用配置中的 `server.host` 和 `server.port` 组装 URL；如果 workspace ID 缺失则允许 `list` 继续展示但无法标记默认值。当前通用配置加载函数会要求 workspace ID，本轮实现需要保留只读取 HTTP backend 地址和可选 workspace 的配置读取路径，避免 `workspaces list` 在没有默认 workspace 时无法列出可选项。
 
 `workspaces list` 默认表格列建议为 `Default`、`Hash`、`Name`、`Workspace ID`、`Notes`、`Latest Note`。默认标记使用 `*`，名称为空时显示空字符串或 `-`，最近 note 时间为空时显示 `-`。`--json` 输出结构建议为 `{"workspaces": [...], "default_workspace_id": "...或null"}`，每个 workspace 项额外包含 `is_default` 布尔值。
 
@@ -62,20 +62,21 @@ HTTP 响应校验保持当前 `HttpZembraRepository` 的风格：顶层必须包
 
 ### 配置读取调整
 
-当前 `load_cascading_config()` 会强制要求 workspace 字段存在，而 `workspaces list` 的目标之一是帮助用户找到并设置默认 workspace。因此设计上需要新增低风险的内部读取函数，例如 `load_workspace_command_config(cli_config_path, global_config_path)`，只返回 `http_base_url` 和可选 `workspace_id`、`workspace_name`，同时保留非法 TOML、非法 `cli.mode`、缺少所有连接材料等现有错误风格。这个函数只供 workspace 命令使用，不替代业务命令的配置读取入口。
+当前 `load_cascading_config()` 会强制要求 workspace 字段存在，而 `workspaces list` 的目标之一是帮助用户找到并设置默认 workspace。因此设计上需要新增低风险的内部读取函数，例如 `load_workspace_command_config(cli_config_path, global_config_path)`，返回可用后端 URL 和可选 `workspace_id`、`workspace_name`，同时保留非法 TOML、非法 `cli.mode`、缺少所有连接材料等现有错误风格。这个函数只供 workspace 命令使用，不替代业务命令的配置读取入口。
 
 ## 测试用例
 
 | 类型 | 用例 | 预期 |
 | --- | --- | --- |
 | 配置测试 | workspace 命令配置读取缺少 `workspace.id` 但存在 `cli.http_base_url` | 可读取后端地址，默认 workspace 为 `None` |
+| 配置测试 | workspace 命令配置读取缺少 `cli.http_base_url` 但存在 `server.host` 和 `server.port` | 可从配置组装后端地址 |
 | 配置测试 | `write_default_workspace()` 写入名称 | `[workspace].id` 和 `[workspace].name` 正确写入，其他段保留 |
 | 配置测试 | `write_default_workspace()` 收到 `workspace_name = None` | 更新 id 并删除旧 name |
 | HTTP client 测试 | `list_workspaces()` 请求 `/workspaces` | 返回 workspace 列表模型 |
 | HTTP client 测试 | 后端返回缺失或非法 `workspaces` | 抛出 `ZembraHttpClientError` |
 | CLI 测试 | `workspaces list` 默认输出 | 表格包含 hash、名称、ID、note 数和默认标记 |
 | CLI 测试 | `workspaces list --json` | stdout 是合法 JSON，包含 `is_default` |
-| CLI 测试 | 缺少 `cli.http_base_url` | 命令失败并提示配置后端地址 |
+| CLI 测试 | 缺少可用后端地址 | 命令失败并提示配置后端地址 |
 | CLI 测试 | `set-default` 使用完整 ID、短 hash 前缀、名称 | 唯一匹配时更新配置 |
 | CLI 测试 | `set-default` 无匹配或多匹配 | 命令失败并展示可操作错误信息 |
 | 回归检查 | 现有 note、list、random、run 配置读取 | 既有测试继续通过 |

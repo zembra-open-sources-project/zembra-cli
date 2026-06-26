@@ -584,6 +584,38 @@ def test_workspaces_list_allows_missing_default_workspace(monkeypatch, tmp_path)
     assert all(not item["is_default"] for item in payload["workspaces"])
 
 
+def test_workspaces_list_uses_global_server_config(monkeypatch, tmp_path) -> None:
+    """Verify workspace list reads backend URL from global server config.
+
+    Args:
+        monkeypatch: Pytest monkeypatch fixture.
+        tmp_path: Pytest temporary directory fixture.
+
+    Returns:
+        None.
+    """
+    config_path = tmp_path / ".zembra" / "config.cli.toml"
+    global_config_path = tmp_path / ".zembra.env"
+    config_path.parent.mkdir(parents=True, exist_ok=True)
+    config_path.write_text(
+        f'[workspace]\nid = "{TEST_WORKSPACE_ID}"\n',
+        encoding="utf-8",
+    )
+    global_config_path.write_text(
+        '[server]\nhost = "127.0.0.1"\nport = 3000\n',
+        encoding="utf-8",
+    )
+    monkeypatch.setattr(cli, "default_cli_config_path", lambda: config_path)
+    monkeypatch.setattr(cli, "default_global_config_path", lambda: global_config_path)
+    FakeHttpRepository.instances.clear()
+    monkeypatch.setattr(cli, "HttpZembraRepository", FakeHttpRepository)
+
+    result = runner.invoke(app, ["workspaces", "list", "--json"])
+
+    assert result.exit_code == 0
+    assert FakeHttpRepository.instances[0].base_url == "http://127.0.0.1:3000"
+
+
 def test_workspaces_list_requires_configured_backend_url(monkeypatch, tmp_path) -> None:
     """Verify workspace commands do not use a hard-coded backend URL.
 

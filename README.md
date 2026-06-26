@@ -87,7 +87,7 @@ zembra-cli workspaces list --json
 zembra-cli workspaces set-default 550e8400
 ```
 
-Workspace commands read the backend URL only from `cli.http_base_url` in the merged config. `set-default` accepts a full workspace ID, a short hash prefix, or an exact workspace name, then writes the selected workspace to `~/.zembra/config.cli.toml`.
+Workspace commands read the backend URL only from configuration. They prefer `cli.http_base_url` from the merged config and can also use configured `server.host` plus `server.port`; no default URL is assumed. `set-default` accepts a full workspace ID, a short hash prefix, or an exact workspace name, then writes the selected workspace to `~/.zembra/config.cli.toml`.
 
 ## HTTP Mode
 
