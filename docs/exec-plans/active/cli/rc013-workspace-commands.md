@@ -40,7 +40,7 @@ Stage 1 完成后提交：配置读写和 HTTP 客户端能力作为一个原子
 
 ### Task 2.1：实现 `workspaces list`
 
-状态：Designed
+状态：Finished
 
 修改：`src/zembra_cli/cli.py`、`tests/test_cli.py`
 
@@ -52,7 +52,7 @@ Stage 1 完成后提交：配置读写和 HTTP 客户端能力作为一个原子
 
 ### Task 2.2：实现 `workspaces set-default <hash-or-name>`
 
-状态：Designed
+状态：Finished
 
 修改：`src/zembra_cli/cli.py`、`tests/test_cli.py`
 
@@ -63,6 +63,8 @@ Stage 1 完成后提交：配置读写和 HTTP 客户端能力作为一个原子
 预期验证结果：完整 ID、短 hash 前缀和名称三种输入都能在唯一匹配时更新配置；无匹配和多匹配都以非零退出码失败；成功输出包含已设置的 workspace 标识；配置文件不修改数据库路径和 backend URL。
 
 Stage 2 完成后提交：CLI workspace 命令和对应测试作为一个原子提交。
+
+验证记录：2026-06-26 已运行 `uv run pytest tests/test_cli.py -q`，61 个测试通过。
 
 ## Stage 3：文档、验证与计划回写
 

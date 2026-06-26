@@ -13,6 +13,7 @@ from typing import Annotated, Literal
 import typer
 from rich.console import Console
 from rich.markdown import Markdown
+from rich.table import Table
 
 from zembra_cli import __version__
 from zembra_cli.config import (
@@ -20,7 +21,9 @@ from zembra_cli.config import (
     default_cli_config_path,
     default_global_config_path,
     load_cascading_config,
+    load_workspace_command_config,
     write_database_path,
+    write_default_workspace,
 )
 from zembra_cli.database import (
     DEFAULT_DATABASE_PATH,
@@ -32,7 +35,7 @@ from zembra_cli.database import (
 from zembra_cli.http_client import HttpZembraRepository, ZembraHttpClientError
 from zembra_cli.interactive import render_intro_for_repository, run_interactive_session
 from zembra_cli.mcp_server import run_mcp_server
-from zembra_cli.models import FieldNotesGroup, NoteWithMetadata, TaggedNotesGroup
+from zembra_cli.models import FieldNotesGroup, NoteWithMetadata, TaggedNotesGroup, WorkspaceSummary
 from zembra_cli.repository import (
     AmbiguousNoteReferenceError,
     CliRepository,
@@ -57,9 +60,11 @@ logger = logging.getLogger(__name__)
 config_app = typer.Typer(help="Manage zembra system configuration.")
 list_app = typer.Typer(help="List zembra fields and tags.")
 random_app = typer.Typer(help="Show random zembra notes.")
+workspaces_app = typer.Typer(help="Manage zembra workspaces.")
 app.add_typer(config_app, name="config")
 app.add_typer(list_app, name="list")
 app.add_typer(random_app, name="random")
+app.add_typer(workspaces_app, name="workspaces")
 
 
 def parse_tag_values(tag_values: list[str] | None) -> list[str]:
@@ -248,6 +253,114 @@ def field_notes_group_to_dict(group: FieldNotesGroup) -> dict:
         JSON-compatible dictionary preserving the group field and notes.
     """
     return group.model_dump()
+
+
+def workspace_summary_to_dict(item: WorkspaceSummary, default_workspace_id: str | None) -> dict:
+    """Convert a workspace summary to CLI JSON output.
+
+    Args:
+        item: Workspace summary returned by the backend.
+        default_workspace_id: Currently configured default workspace identifier.
+
+    Returns:
+        JSON-compatible dictionary with an added default marker.
+    """
+    payload = item.model_dump()
+    payload["is_default"] = item.workspace_id == default_workspace_id
+    return payload
+
+
+def format_workspace_name(workspace_name: str | None) -> str:
+    """Format an optional workspace name for table and error output.
+
+    Args:
+        workspace_name: Optional backend workspace display name.
+
+    Returns:
+        Human-readable workspace name placeholder.
+    """
+    return workspace_name if workspace_name is not None else "-"
+
+
+def format_workspace_latest_note(latest_note_created_at: int | None) -> str:
+    """Format an optional latest note timestamp for table output.
+
+    Args:
+        latest_note_created_at: Optional Unix timestamp returned by the backend.
+
+    Returns:
+        Human-readable timestamp placeholder.
+    """
+    return str(latest_note_created_at) if latest_note_created_at is not None else "-"
+
+
+def build_workspaces_table(
+    workspaces: list[WorkspaceSummary],
+    default_workspace_id: str | None,
+) -> Table:
+    """Build the workspace list output table.
+
+    Args:
+        workspaces: Backend workspace summaries to render.
+        default_workspace_id: Currently configured default workspace identifier.
+
+    Returns:
+        Rich table for terminal output.
+    """
+    table = Table()
+    table.add_column("Default")
+    table.add_column("Hash")
+    table.add_column("Name")
+    table.add_column("Workspace ID", no_wrap=True, overflow="ignore")
+    table.add_column("Notes", justify="right")
+    table.add_column("Latest Note")
+    for item in workspaces:
+        table.add_row(
+            "*" if item.workspace_id == default_workspace_id else "",
+            item.short_hash,
+            format_workspace_name(item.workspace_name),
+            item.workspace_id,
+            str(item.visible_note_count),
+            format_workspace_latest_note(item.latest_note_created_at),
+        )
+    return table
+
+
+def matching_workspaces(workspaces: list[WorkspaceSummary], workspace_ref: str) -> list[WorkspaceSummary]:
+    """Find workspaces matching a user-provided reference.
+
+    Args:
+        workspaces: Backend workspace summaries to search.
+        workspace_ref: User input containing a full id, short hash prefix, or name.
+
+    Returns:
+        Workspaces matching any supported reference rule.
+    """
+    ref = workspace_ref.strip()
+    return [
+        item
+        for item in workspaces
+        if item.workspace_id == ref
+        or item.short_hash.startswith(ref)
+        or item.workspace_name == ref
+    ]
+
+
+def format_workspace_candidates(workspaces: list[WorkspaceSummary]) -> str:
+    """Format workspace candidates for command error messages.
+
+    Args:
+        workspaces: Candidate workspace summaries.
+
+    Returns:
+        Multi-line candidate list.
+    """
+    lines = []
+    for item in workspaces:
+        lines.append(
+            f"- {item.short_hash}  {format_workspace_name(item.workspace_name)}  {item.workspace_id}"
+        )
+    return "\n".join(lines)
 
 
 def format_note_metadata(item: NoteWithMetadata) -> str:
@@ -794,6 +907,116 @@ def database(
         fail_command(error.message)
 
     typer.echo(f"Configured zembra database path: {config.database_path}")
+
+
+def load_workspace_client() -> tuple[HttpZembraRepository, str | None]:
+    """Create an HTTP client for workspace management commands.
+
+    Args:
+        None.
+
+    Returns:
+        HTTP repository and the currently configured default workspace id.
+    """
+    try:
+        config = load_workspace_command_config(
+            default_cli_config_path(),
+            default_global_config_path(),
+        )
+    except ConfigError as error:
+        fail_command(error.message)
+
+    if config.http_base_url is None:
+        fail_command("HTTP backend URL is missing in the zembra config.")
+
+    workspace_id = config.workspace_id or "workspace-command"
+    return HttpZembraRepository(config.http_base_url, workspace_id=workspace_id), config.workspace_id
+
+
+@workspaces_app.command("list")
+def list_workspaces(
+    json_output: Annotated[
+        bool,
+        typer.Option("--json", help="Output workspaces as JSON."),
+    ] = False,
+) -> None:
+    """List backend workspaces.
+
+    Args:
+        json_output: Whether to print JSON instead of a human-readable table.
+
+    Returns:
+        None. The command prints workspace data or exits on failure.
+    """
+    repository, default_workspace_id = load_workspace_client()
+    try:
+        workspaces = repository.list_workspaces()
+    except ZembraHttpClientError as error:
+        fail_command(error.message)
+    finally:
+        repository.close()
+
+    if json_output:
+        payload = {
+            "default_workspace_id": default_workspace_id,
+            "workspaces": [
+                workspace_summary_to_dict(item, default_workspace_id) for item in workspaces
+            ],
+        }
+        typer.echo(json.dumps(payload, ensure_ascii=False))
+        return
+
+    console.print(build_workspaces_table(workspaces, default_workspace_id))
+
+
+@workspaces_app.command("set-default")
+def set_default_workspace(
+    workspace_ref: Annotated[
+        str,
+        typer.Argument(help="Workspace full id, short hash prefix, or exact name."),
+    ],
+) -> None:
+    """Set the default workspace in the CLI config.
+
+    Args:
+        workspace_ref: Workspace full id, short hash prefix, or exact name.
+
+    Returns:
+        None. The command updates the CLI config or exits on failure.
+    """
+    repository, _default_workspace_id = load_workspace_client()
+    try:
+        workspaces = repository.list_workspaces()
+    except ZembraHttpClientError as error:
+        fail_command(error.message)
+    finally:
+        repository.close()
+
+    matches = matching_workspaces(workspaces, workspace_ref)
+    if not matches:
+        fail_command(f'No workspace matched "{workspace_ref}".')
+    if len(matches) > 1:
+        fail_command(
+            f'Workspace reference "{workspace_ref}" matched multiple workspaces.\n'
+            f"{format_workspace_candidates(matches)}"
+        )
+
+    selected_workspace = matches[0]
+    try:
+        write_default_workspace(
+            selected_workspace.workspace_id,
+            selected_workspace.workspace_name,
+            default_cli_config_path(),
+        )
+    except ConfigError as error:
+        fail_command(error.message)
+
+    typer.echo(
+        "Default workspace set: "
+        f"{selected_workspace.short_hash} "
+        f"{format_workspace_name(selected_workspace.workspace_name)} "
+        f"{selected_workspace.workspace_id}"
+    )
 
 
 @list_app.command("tags")

@@ -20,6 +20,7 @@ from zembra_cli.models import (
     NoteWithMetadata,
     TaggedNotesGroup,
     TagRecord,
+    WorkspaceSummary,
 )
 from zembra_cli.repository import (
     AmbiguousNoteReferenceError,
@@ -72,6 +73,32 @@ def configure_cli_http(monkeypatch, tmp_path, base_url: str = "http://backend.te
     config_path.write_text(
         f'[cli]\nhttp_base_url = "{base_url}"\n\n'
         f'[workspace]\nid = "{TEST_WORKSPACE_ID}"\n',
+        encoding="utf-8",
+    )
+    monkeypatch.setattr(cli, "default_cli_config_path", lambda: config_path)
+    monkeypatch.setattr(cli, "default_global_config_path", lambda: tmp_path / ".zembra.env")
+    return config_path
+
+
+def configure_cli_http_without_workspace(
+    monkeypatch,
+    tmp_path,
+    base_url: str = "http://backend.test",
+) -> Path:
+    """Point workspace commands at a test HTTP config without default workspace.
+
+    Args:
+        monkeypatch: Pytest monkeypatch fixture.
+        tmp_path: Pytest temporary directory fixture.
+        base_url: Temporary backend URL used by the CLI.
+
+    Returns:
+        The temporary CLI config path.
+    """
+    config_path = tmp_path / ".zembra" / "config.cli.toml"
+    config_path.parent.mkdir(parents=True, exist_ok=True)
+    config_path.write_text(
+        f'[cli]\nhttp_base_url = "{base_url}"\n',
         encoding="utf-8",
     )
     monkeypatch.setattr(cli, "default_cli_config_path", lambda: config_path)
@@ -289,6 +316,39 @@ class FakeHttpRepository:
             )
         ]
 
+    def list_workspaces(self) -> list[WorkspaceSummary]:
+        """Return fake workspace summaries.
+
+        Args:
+            None.
+
+        Returns:
+            Fake workspace summaries.
+        """
+        return [
+            WorkspaceSummary(
+                workspace_id="00000000-0000-4000-8000-000000000300",
+                workspace_name=None,
+                short_hash="00000000",
+                visible_note_count=9,
+                latest_note_created_at=1782443949,
+            ),
+            WorkspaceSummary(
+                workspace_id=TEST_WORKSPACE_ID,
+                workspace_name="Work",
+                short_hash="550e8400",
+                visible_note_count=3,
+                latest_note_created_at=123,
+            ),
+            WorkspaceSummary(
+                workspace_id="55f7d228-dc74-4bc8-b582-fbc92c8f8490",
+                workspace_name="Local",
+                short_hash="55f7d228",
+                visible_note_count=0,
+                latest_note_created_at=None,
+            ),
+        ]
+
     def list_notes(self, include_deleted: bool = False) -> list[NoteRecord]:
         """Return fake notes.
 
@@ -456,6 +516,195 @@ def test_mcp_command_runs_local_server(monkeypatch) -> None:
 
     assert result.exit_code == 0
     assert calls == ["run"]
+
+
+def test_workspaces_list_outputs_table(monkeypatch, tmp_path) -> None:
+    """Verify workspace list renders backend workspaces as a table.
+
+    Args:
+        monkeypatch: Pytest monkeypatch fixture.
+        tmp_path: Pytest temporary directory fixture.
+
+    Returns:
+        None.
+    """
+    configure_cli_http(monkeypatch, tmp_path)
+    monkeypatch.setattr(cli, "HttpZembraRepository", FakeHttpRepository)
+
+    result = runner.invoke(app, ["workspaces", "list"])
+
+    assert result.exit_code == 0
+    assert "550e8400" in result.stdout
+    assert "Work" in result.stdout
+    assert TEST_WORKSPACE_ID in result.stdout
+    assert "*" in result.stdout
+
+
+def test_workspaces_list_json_outputs_default_marker(monkeypatch, tmp_path) -> None:
+    """Verify workspace list --json emits parseable JSON with default markers.
+
+    Args:
+        monkeypatch: Pytest monkeypatch fixture.
+        tmp_path: Pytest temporary directory fixture.
+
+    Returns:
+        None.
+    """
+    configure_cli_http(monkeypatch, tmp_path)
+    monkeypatch.setattr(cli, "HttpZembraRepository", FakeHttpRepository)
+
+    result = runner.invoke(app, ["workspaces", "list", "--json"])
+
+    assert result.exit_code == 0
+    payload = json.loads(result.stdout)
+    assert payload["default_workspace_id"] == TEST_WORKSPACE_ID
+    assert payload["workspaces"][1]["workspace_id"] == TEST_WORKSPACE_ID
+    assert payload["workspaces"][1]["is_default"] is True
+    assert payload["workspaces"][0]["is_default"] is False
+
+
+def test_workspaces_list_allows_missing_default_workspace(monkeypatch, tmp_path) -> None:
+    """Verify workspace list works before a default workspace is configured.
+
+    Args:
+        monkeypatch: Pytest monkeypatch fixture.
+        tmp_path: Pytest temporary directory fixture.
+
+    Returns:
+        None.
+    """
+    configure_cli_http_without_workspace(monkeypatch, tmp_path)
+    monkeypatch.setattr(cli, "HttpZembraRepository", FakeHttpRepository)
+
+    result = runner.invoke(app, ["workspaces", "list", "--json"])
+
+    assert result.exit_code == 0
+    payload = json.loads(result.stdout)
+    assert payload["default_workspace_id"] is None
+    assert all(not item["is_default"] for item in payload["workspaces"])
+
+
+def test_workspaces_list_requires_configured_backend_url(monkeypatch, tmp_path) -> None:
+    """Verify workspace commands do not use a hard-coded backend URL.
+
+    Args:
+        monkeypatch: Pytest monkeypatch fixture.
+        tmp_path: Pytest temporary directory fixture.
+
+    Returns:
+        None.
+    """
+    database_path = tmp_path / "zembra.sqlite3"
+    configure_cli_database(monkeypatch, tmp_path, database_path)
+
+    result = runner.invoke(app, ["workspaces", "list"])
+
+    assert result.exit_code == 1
+    assert "HTTP backend URL is missing" in result.stderr
+
+
+@pytest.mark.parametrize(
+    "workspace_ref",
+    [
+        TEST_WORKSPACE_ID,
+        "550e",
+        "Work",
+    ],
+)
+def test_workspaces_set_default_updates_config(
+    monkeypatch,
+    tmp_path,
+    workspace_ref: str,
+) -> None:
+    """Verify set-default accepts full ids, short hash prefixes, and names.
+
+    Args:
+        monkeypatch: Pytest monkeypatch fixture.
+        tmp_path: Pytest temporary directory fixture.
+        workspace_ref: Workspace reference supplied to the command.
+
+    Returns:
+        None.
+    """
+    config_path = configure_cli_http_without_workspace(monkeypatch, tmp_path)
+    monkeypatch.setattr(cli, "HttpZembraRepository", FakeHttpRepository)
+
+    result = runner.invoke(app, ["workspaces", "set-default", workspace_ref])
+
+    assert result.exit_code == 0
+    assert TEST_WORKSPACE_ID in result.stdout
+    config_text = config_path.read_text(encoding="utf-8")
+    assert f'id = "{TEST_WORKSPACE_ID}"' in config_text
+    assert 'name = "Work"' in config_text
+    assert 'http_base_url = "http://backend.test"' in config_text
+
+
+def test_workspaces_set_default_removes_stale_name_for_null_backend_name(
+    monkeypatch,
+    tmp_path,
+) -> None:
+    """Verify set-default removes stale CLI names when backend name is null.
+
+    Args:
+        monkeypatch: Pytest monkeypatch fixture.
+        tmp_path: Pytest temporary directory fixture.
+
+    Returns:
+        None.
+    """
+    config_path = configure_cli_http(monkeypatch, tmp_path)
+    config_path.write_text(
+        config_path.read_text(encoding="utf-8") + 'name = "Old"\n',
+        encoding="utf-8",
+    )
+    monkeypatch.setattr(cli, "HttpZembraRepository", FakeHttpRepository)
+
+    result = runner.invoke(app, ["workspaces", "set-default", "0000"])
+
+    assert result.exit_code == 0
+    config_text = config_path.read_text(encoding="utf-8")
+    assert 'id = "00000000-0000-4000-8000-000000000300"' in config_text
+    assert "name =" not in config_text
+
+
+def test_workspaces_set_default_reports_no_match(monkeypatch, tmp_path) -> None:
+    """Verify set-default reports unmatched workspace references.
+
+    Args:
+        monkeypatch: Pytest monkeypatch fixture.
+        tmp_path: Pytest temporary directory fixture.
+
+    Returns:
+        None.
+    """
+    configure_cli_http(monkeypatch, tmp_path)
+    monkeypatch.setattr(cli, "HttpZembraRepository", FakeHttpRepository)
+
+    result = runner.invoke(app, ["workspaces", "set-default", "missing"])
+
+    assert result.exit_code == 1
+    assert "No workspace matched" in result.stderr
+
+
+def test_workspaces_set_default_reports_ambiguous_match(monkeypatch, tmp_path) -> None:
+    """Verify set-default reports ambiguous short hash prefixes.
+
+    Args:
+        monkeypatch: Pytest monkeypatch fixture.
+        tmp_path: Pytest temporary directory fixture.
+
+    Returns:
+        None.
+    """
+    configure_cli_http(monkeypatch, tmp_path)
+    monkeypatch.setattr(cli, "HttpZembraRepository", FakeHttpRepository)
+
+    result = runner.invoke(app, ["workspaces", "set-default", "5"])
+
+    assert result.exit_code == 1
+    assert "matched multiple workspaces" in result.stderr
+    assert "550e8400" in result.stderr
+    assert "55f7d228" in result.stderr
 
 
 def test_add_command_creates_note_with_repeated_tags(tmp_path, monkeypatch) -> None:
