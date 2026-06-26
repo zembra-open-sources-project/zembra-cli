@@ -243,6 +243,7 @@ def load_cascading_config(
         raise CascadingConfigMissingError(cli_path, global_path)
 
     merged_data = _merge_config_data(global_data or {}, cli_data or {})
+    _merge_workspace_backend_server_config(merged_data, global_data or {}, cli_data or {})
     if isinstance(cli_data, dict):
         workspace_section = cli_data.get("workspace")
         if isinstance(workspace_section, dict):

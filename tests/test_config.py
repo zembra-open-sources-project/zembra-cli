@@ -227,6 +227,38 @@ def test_load_cascading_config_merges_missing_http_base_url_from_global(tmp_path
     )
 
 
+def test_load_cascading_config_derives_http_base_url_from_server(tmp_path) -> None:
+    """Verify runtime config derives HTTP URL from configured backend server.
+
+    Args:
+        tmp_path: Pytest temporary directory fixture.
+
+    Returns:
+        None.
+    """
+    cli_config_path = tmp_path / ".zembra" / "config.cli.toml"
+    global_config_path = tmp_path / ".zembra.env"
+    database_path = tmp_path / "zembra.sqlite3"
+    cli_config_path.parent.mkdir()
+    cli_config_path.write_text(
+        f'[database]\npath = "{database_path}"\n\n'
+        '[workspace]\nid = "550e8400-e29b-41d4-a716-446655440000"\n',
+        encoding="utf-8",
+    )
+    global_config_path.write_text(
+        '[server]\nhost = "127.0.0.1"\nport = 3000\n',
+        encoding="utf-8",
+    )
+
+    config = load_cascading_config(cli_config_path, global_config_path)
+
+    assert config == ZembraConfig(
+        database_path=database_path,
+        http_base_url="http://127.0.0.1:3000",
+        workspace_id="550e8400-e29b-41d4-a716-446655440000",
+    )
+
+
 def test_load_cascading_config_reports_checked_paths(tmp_path) -> None:
     """Verify missing cascaded config reports both checked paths.
 
