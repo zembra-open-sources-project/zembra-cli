@@ -47,7 +47,7 @@ def configure_cli_database(monkeypatch, tmp_path, database_path) -> Path:
     config_path = tmp_path / ".zembra" / "config.cli.toml"
     config_path.parent.mkdir(parents=True, exist_ok=True)
     config_path.write_text(
-        f'[cli]\nmode = "direct"\n\n[database]\npath = "{database_path}"\n\n'
+        f'[database]\npath = "{database_path}"\n\n'
         f'[workspace]\nid = "{TEST_WORKSPACE_ID}"\n',
         encoding="utf-8",
     )
@@ -70,7 +70,7 @@ def configure_cli_http(monkeypatch, tmp_path, base_url: str = "http://backend.te
     config_path = tmp_path / ".zembra" / "config.cli.toml"
     config_path.parent.mkdir(parents=True, exist_ok=True)
     config_path.write_text(
-        f'[cli]\nmode = "http"\nhttp_base_url = "{base_url}"\n\n'
+        f'[cli]\nhttp_base_url = "{base_url}"\n\n'
         f'[workspace]\nid = "{TEST_WORKSPACE_ID}"\n',
         encoding="utf-8",
     )
@@ -366,6 +366,36 @@ class FakeHttpRepository:
             created_at=1,
         )
         return [FieldNotesGroup(field=field, notes=self.random_notes(count))][:number]
+
+
+class FailingHttpRepository(FakeHttpRepository):
+    """Fake HTTP repository that fails every operation with a client error.
+
+    Attributes:
+        Inherits captured instance state from FakeHttpRepository.
+    """
+
+    def create_note(
+        self,
+        content: str,
+        role: str = "Human",
+        field_name: str | None = None,
+        tag_names: list[str] | None = None,
+        device_id: str | None = None,
+    ) -> NoteRecord:
+        """Raise a HTTP client error instead of creating a note.
+
+        Args:
+            content: Note body text.
+            role: Note creation role.
+            field_name: Optional field name.
+            tag_names: Optional tag names.
+            device_id: Optional device identifier.
+
+        Returns:
+            Never returns; raises a client error.
+        """
+        raise cli.ZembraHttpClientError("backend unavailable")
 
 
 def test_version_flag_prints_package_version() -> None:
@@ -968,8 +998,8 @@ def test_list_tags_uses_http_mode_from_cli_config(tmp_path, monkeypatch) -> None
     assert FakeHttpRepository.instances[0].base_url == "http://backend.test"
 
 
-def test_add_command_rejects_config_without_cli_mode(tmp_path, monkeypatch) -> None:
-    """Verify database.path alone does not imply direct mode.
+def test_add_command_uses_direct_config_without_cli_mode(tmp_path, monkeypatch) -> None:
+    """Verify database.path and workspace.id are enough for direct mode.
 
     Args:
         tmp_path: Pytest temporary directory fixture.
@@ -980,15 +1010,49 @@ def test_add_command_rejects_config_without_cli_mode(tmp_path, monkeypatch) -> N
     """
     config_path = tmp_path / ".zembra" / "config.cli.toml"
     database_path = tmp_path / "zembra.sqlite3"
+    initialize_cli_database(database_path)
     config_path.parent.mkdir(parents=True)
-    config_path.write_text(f'[database]\npath = "{database_path}"\n', encoding="utf-8")
+    config_path.write_text(
+        f'[database]\npath = "{database_path}"\n\n[workspace]\nid = "{TEST_WORKSPACE_ID}"\n',
+        encoding="utf-8",
+    )
     monkeypatch.setattr(cli, "default_cli_config_path", lambda: config_path)
     monkeypatch.setattr(cli, "default_global_config_path", lambda: tmp_path / ".zembra.env")
 
     result = runner.invoke(app, ["add", "hello", "--field", "work"])
 
-    assert result.exit_code == 1
-    assert "CLI mode is missing" in result.stderr
+    assert result.exit_code == 0
+    payload = json.loads(result.stdout)
+    assert payload["note"]["content"] == "hello"
+
+
+def test_add_command_falls_back_to_direct_after_http_error(tmp_path, monkeypatch) -> None:
+    """Verify HTTP failures retry the same command through direct SQLite.
+
+    Args:
+        tmp_path: Pytest temporary directory fixture.
+        monkeypatch: Pytest monkeypatch fixture.
+
+    Returns:
+        None.
+    """
+    FakeHttpRepository.instances = []
+    database_path = tmp_path / "zembra.sqlite3"
+    initialize_cli_database(database_path)
+    config_path = configure_cli_http(monkeypatch, tmp_path)
+    config_path.write_text(
+        config_path.read_text(encoding="utf-8")
+        + f'\n[database]\npath = "{database_path}"\n',
+        encoding="utf-8",
+    )
+    monkeypatch.setattr(cli, "HttpZembraRepository", FailingHttpRepository)
+
+    result = runner.invoke(app, ["add", "fallback note", "--field", "work"])
+
+    assert result.exit_code == 0
+    payload = json.loads(result.stdout)
+    assert payload["note"]["content"] == "fallback note"
+    assert FakeHttpRepository.instances[0].base_url == "http://backend.test"
 
 
 def test_config_database_command_writes_config(tmp_path, monkeypatch) -> None:
@@ -1070,7 +1134,7 @@ def test_init_command_creates_default_database_and_config(tmp_path, monkeypatch)
     assert f"Database: {database_path} (created)" in result.stdout
     assert f"Config: {config_path} (created)" in result.stdout
     config = load_cascading_config(config_path, global_config_path)
-    assert config.cli_mode == "direct"
+    assert config.cli_mode is None
     assert config.database_path == database_path
     assert config.workspace_id is not None
     uuid.UUID(config.workspace_id)
@@ -1111,7 +1175,6 @@ def test_init_command_updates_config_and_skips_complete_database(tmp_path, monke
     assert f"Config: {config_path} (updated)" in second_result.stdout
     config_text = config_path.read_text(encoding="utf-8")
     assert 'theme = "light"' in config_text
-    assert 'mode = "direct"' in config_text
     assert f'path = "{database_path}"' in config_text
     assert "[workspace]" in config_text
 

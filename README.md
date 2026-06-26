@@ -26,7 +26,7 @@ zembra-cli --help
 
 ## Initialize Local Storage
 
-For local direct mode, initialize a SQLite database and write the shared Zembra config file:
+Initialize a SQLite database and write the shared Zembra config file:
 
 ```bash
 zembra-cli init
@@ -40,7 +40,7 @@ zembra-cli init --database /path/to/zembra.sqlite3
 
 The default CLI config file is `~/.zembra/config.cli.toml`. Existing `~/.zembra.env` files are still read as a lower-priority fallback when a field is missing from the CLI config.
 
-Direct mode stores the current workspace in the CLI config. `zembra-cli init` generates a workspace UUID when `--workspace-id` is not supplied. Use `--workspace-name` only when a display name should be stored; otherwise the config omits the name and the database stores `NULL`.
+The local database stores the current workspace in the CLI config. `zembra-cli init` generates a workspace UUID when `--workspace-id` is not supplied. Use `--workspace-name` only when a display name should be stored; otherwise the config omits the name and the database stores `NULL`.
 
 ## Basic Usage
 
@@ -81,15 +81,14 @@ Add `--json` to random commands when structured output is needed.
 
 ## HTTP Mode
 
-`zembra-cli` can also connect to a Zembra HTTP backend. Configure `~/.zembra/config.cli.toml` with HTTP mode:
+`zembra-cli` can also connect to a Zembra HTTP backend. Add a backend URL to `~/.zembra/config.cli.toml` when HTTP should be tried first:
 
 ```toml
 [cli]
-mode = "http"
 http_base_url = "http://127.0.0.1:3000"
 ```
 
-The same user-facing commands are used in both direct and HTTP mode.
+The same user-facing commands are used for HTTP and local storage. When `http_base_url` is configured, commands try HTTP first and fall back to the configured SQLite database if the HTTP request fails.
 
 ## MCP Server
 

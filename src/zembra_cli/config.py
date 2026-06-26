@@ -95,7 +95,7 @@ class ConfigDatabasePathMissingError(ConfigError):
 
 
 class ConfigCliModeMissingError(ConfigError):
-    """Signal that the zembra configuration does not define cli.mode."""
+    """Signal that legacy zembra configuration does not define cli.mode."""
 
     def __init__(self) -> None:
         """Initialize the missing CLI mode error.
@@ -175,14 +175,14 @@ class ZembraConfig:
     """Represent loaded zembra system configuration.
 
     Attributes:
-        cli_mode: CLI connection mode.
-        database_path: SQLite database path configured for direct mode.
-        http_base_url: Backend base URL configured for HTTP mode.
+        cli_mode: Optional legacy CLI connection mode.
+        database_path: SQLite database path configured for local direct access.
+        http_base_url: Backend base URL configured for HTTP access.
         workspace_id: CLI workspace identifier.
-        workspace_name: Optional CLI direct-mode workspace display name.
+        workspace_name: Optional CLI workspace display name.
     """
 
-    cli_mode: Literal["direct", "http"]
+    cli_mode: Literal["direct", "http"] | None = None
     database_path: Path | None = None
     http_base_url: str | None = None
     workspace_id: str | None = None
@@ -408,39 +408,41 @@ def _config_from_data(data: dict[str, Any]) -> ZembraConfig:
     """
     cli_section = data.get("cli")
     if not isinstance(cli_section, dict):
-        raise ConfigCliModeMissingError()
+        cli_section = {}
 
     raw_cli_mode = cli_section.get("mode")
-    if raw_cli_mode is None:
-        raise ConfigCliModeMissingError()
-    if raw_cli_mode not in {"direct", "http"}:
+    if raw_cli_mode is not None and raw_cli_mode not in {"direct", "http"}:
         raise ConfigCliModeInvalidError(raw_cli_mode)
 
-    if raw_cli_mode == "http":
-        raw_http_base_url = cli_section.get("http_base_url")
-        if not isinstance(raw_http_base_url, str) or not raw_http_base_url.strip():
-            raise ConfigHttpBaseUrlMissingError()
-        workspace_id, workspace_name = _workspace_config_from_data(data)
-        return ZembraConfig(
-            cli_mode="http",
-            http_base_url=raw_http_base_url.strip(),
-            workspace_id=workspace_id,
-            workspace_name=workspace_name,
-        )
+    raw_http_base_url = cli_section.get("http_base_url")
+    http_base_url = raw_http_base_url.strip() if isinstance(raw_http_base_url, str) else None
+    if raw_cli_mode == "direct":
+        http_base_url = None
+    if raw_cli_mode == "http" and not http_base_url:
+        raise ConfigHttpBaseUrlMissingError()
 
     database_section = data.get("database")
     if not isinstance(database_section, dict):
-        raise ConfigDatabasePathMissingError()
+        database_section = {}
 
     raw_database_path = database_section.get("path")
-    if not isinstance(raw_database_path, str) or not raw_database_path.strip():
+    database_path = (
+        Path(raw_database_path).expanduser()
+        if isinstance(raw_database_path, str) and raw_database_path.strip()
+        else None
+    )
+
+    if raw_cli_mode == "direct" and database_path is None:
+        raise ConfigDatabasePathMissingError()
+    if raw_cli_mode is None and http_base_url is None and database_path is None:
         raise ConfigDatabasePathMissingError()
 
     workspace_id, workspace_name = _workspace_config_from_data(data)
 
     return ZembraConfig(
-        cli_mode="direct",
-        database_path=Path(raw_database_path).expanduser(),
+        cli_mode=raw_cli_mode,
+        database_path=database_path,
+        http_base_url=http_base_url,
         workspace_id=workspace_id,
         workspace_name=workspace_name,
     )

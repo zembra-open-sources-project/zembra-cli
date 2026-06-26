@@ -1,11 +1,12 @@
 """Command-line entry points for zembra-cli."""
 
 import json
+import logging
 import sqlite3
 import time
 import uuid
-from collections.abc import Iterator
-from contextlib import contextmanager
+from collections.abc import Callable, Iterator
+from contextlib import ExitStack, contextmanager
 from pathlib import Path
 from typing import Annotated, Literal
 
@@ -52,6 +53,7 @@ app = typer.Typer(
     no_args_is_help=True,
 )
 console = Console()
+logger = logging.getLogger(__name__)
 config_app = typer.Typer(help="Manage zembra system configuration.")
 list_app = typer.Typer(help="List zembra fields and tags.")
 random_app = typer.Typer(help="Show random zembra notes.")
@@ -396,6 +398,163 @@ def ensure_workspace(database_path: Path, workspace_id: str, workspace_name: str
         fail_command(f"Could not initialize workspace {workspace_id}: {error}")
 
 
+class HttpFirstFallbackRepository:
+    """Try HTTP first and retry repository operations through direct SQLite after HTTP failure.
+
+    Attributes:
+        http_repository: Repository used for first-attempt HTTP operations.
+        direct_repository_factory: Callable that opens the fallback direct repository.
+        direct_repository: Lazily opened direct repository.
+    """
+
+    def __init__(
+        self,
+        http_repository: CliRepository,
+        direct_repository_factory: Callable[[], CliRepository],
+    ) -> None:
+        """Initialize the HTTP-first fallback repository.
+
+        Args:
+            http_repository: Repository used for first-attempt HTTP operations.
+            direct_repository_factory: Callable that opens the direct fallback repository.
+
+        Returns:
+            None.
+        """
+        self.http_repository = http_repository
+        self.direct_repository_factory = direct_repository_factory
+        self.direct_repository: CliRepository | None = None
+
+    def create_note(
+        self,
+        content: str,
+        role: str = "Human",
+        field_name: str | None = None,
+        tag_names: list[str] | None = None,
+        device_id: str | None = None,
+    ):
+        """Create a note through HTTP first and direct SQLite on HTTP failure.
+
+        Args:
+            content: Note body text.
+            role: Shared schema role value.
+            field_name: Optional field name.
+            tag_names: Optional tag names.
+            device_id: Optional device identifier.
+
+        Returns:
+            Created note record.
+        """
+        return self._call(
+            "create_note",
+            content,
+            role=role,
+            field_name=field_name,
+            tag_names=tag_names,
+            device_id=device_id,
+        )
+
+    def list_notes(self, include_deleted: bool = False):
+        """List notes through HTTP first and direct SQLite on HTTP failure.
+
+        Args:
+            include_deleted: Whether deleted notes should be included.
+
+        Returns:
+            Note records.
+        """
+        return self._call("list_notes", include_deleted=include_deleted)
+
+    def list_tags(self):
+        """List tags through HTTP first and direct SQLite on HTTP failure.
+
+        Args:
+            None.
+
+        Returns:
+            Tag records.
+        """
+        return self._call("list_tags")
+
+    def list_fields(self):
+        """List fields through HTTP first and direct SQLite on HTTP failure.
+
+        Args:
+            None.
+
+        Returns:
+            Field records.
+        """
+        return self._call("list_fields")
+
+    def random_notes(self, number: int):
+        """List random notes through HTTP first and direct SQLite on HTTP failure.
+
+        Args:
+            number: Maximum number of notes.
+
+        Returns:
+            Notes with metadata.
+        """
+        return self._call("random_notes", number)
+
+    def random_tagged_notes(self, number: int, count: int):
+        """List random tagged note groups through HTTP first and direct SQLite on HTTP failure.
+
+        Args:
+            number: Maximum number of tag groups.
+            count: Maximum cumulative number of notes.
+
+        Returns:
+            Tagged note groups.
+        """
+        return self._call("random_tagged_notes", number, count)
+
+    def random_field_notes(self, number: int, count: int):
+        """List random field note groups through HTTP first and direct SQLite on HTTP failure.
+
+        Args:
+            number: Maximum number of field groups.
+            count: Maximum cumulative number of notes.
+
+        Returns:
+            Field note groups.
+        """
+        return self._call("random_field_notes", number, count)
+
+    def _call(self, method_name: str, *args, **kwargs):
+        """Call one repository method with automatic direct fallback.
+
+        Args:
+            method_name: Repository method name to call.
+            *args: Positional arguments forwarded to the repository method.
+            **kwargs: Keyword arguments forwarded to the repository method.
+
+        Returns:
+            Repository method result.
+        """
+        try:
+            method = getattr(self.http_repository, method_name)
+            return method(*args, **kwargs)
+        except ZembraHttpClientError as error:
+            logger.warning("HTTP repository failed; falling back to direct SQLite: %s", error)
+            direct_method = getattr(self._direct_repository(), method_name)
+            return direct_method(*args, **kwargs)
+
+    def _direct_repository(self) -> CliRepository:
+        """Return the lazily opened direct repository.
+
+        Args:
+            None.
+
+        Returns:
+            Direct SQLite repository.
+        """
+        if self.direct_repository is None:
+            self.direct_repository = self.direct_repository_factory()
+        return self.direct_repository
+
+
 @contextmanager
 def open_cli_repository() -> Iterator[tuple[CliRepository, str]]:
     """Open the repository configured for CLI database commands.
@@ -411,30 +570,49 @@ def open_cli_repository() -> Iterator[tuple[CliRepository, str]]:
     except ConfigError as error:
         fail_command(error.message)
 
-    if config.cli_mode == "http":
-        if config.http_base_url is None:
-            fail_command("HTTP backend URL is missing in the zembra config.")
-        if config.workspace_id is None:
-            fail_command("Workspace ID is missing in the zembra CLI config. Run: zembra-cli init")
-        repository = HttpZembraRepository(config.http_base_url, workspace_id=config.workspace_id)
-        try:
-            yield repository, config.http_base_url
-        finally:
-            repository.close()
-        return
-
-    if config.database_path is None:
-        fail_command("Database path is missing in the zembra config.")
     if config.workspace_id is None:
         fail_command("Workspace ID is missing in the zembra CLI config. Run: zembra-cli init")
-    database_path = config.database_path.expanduser()
-    require_initialized_database(database_path)
 
-    try:
-        with database_connection(database_path) as connection:
-            yield ZembraRepository(connection, workspace_id=config.workspace_id), str(database_path)
-    except sqlite3.Error as error:
-        fail_command(f"Could not open the Zembra database: {error}")
+    with ExitStack() as stack:
+        direct_repository: CliRepository | None = None
+
+        def open_direct_repository() -> CliRepository:
+            """Open the configured direct SQLite repository.
+
+            Args:
+                None.
+
+            Returns:
+                Direct SQLite repository bound to the configured workspace.
+            """
+            nonlocal direct_repository
+            if direct_repository is not None:
+                return direct_repository
+            if config.database_path is None:
+                fail_command("Database path is missing in the zembra config.")
+            database_path = config.database_path.expanduser()
+            require_initialized_database(database_path)
+            try:
+                connection = stack.enter_context(database_connection(database_path))
+            except sqlite3.Error as error:
+                fail_command(f"Could not open the Zembra database: {error}")
+            direct_repository = ZembraRepository(connection, workspace_id=config.workspace_id)
+            return direct_repository
+
+        if config.http_base_url is None:
+            yield open_direct_repository(), str(config.database_path)
+            return
+
+        http_repository = HttpZembraRepository(
+            config.http_base_url,
+            workspace_id=config.workspace_id,
+        )
+        stack.callback(http_repository.close)
+        repository = HttpFirstFallbackRepository(http_repository, open_direct_repository)
+        fallback_location = (
+            str(config.database_path) if config.database_path is not None else "unconfigured"
+        )
+        yield repository, f"{config.http_base_url} (fallback: {fallback_location})"
 
 
 def version_callback(value: bool) -> None:
@@ -546,7 +724,6 @@ def init(
         config = write_database_path(
             database_result.database_path,
             config_path,
-            set_direct_mode=True,
             workspace_id=resolved_workspace_id,
             workspace_name=workspace_name,
         )

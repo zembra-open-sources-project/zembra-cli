@@ -6,7 +6,6 @@ import pytest
 
 from zembra_cli.config import (
     ConfigCliModeInvalidError,
-    ConfigCliModeMissingError,
     ConfigDatabasePathMissingError,
     ConfigFileMissingError,
     ConfigHttpBaseUrlMissingError,
@@ -49,7 +48,7 @@ def test_load_cascading_config_reads_database_path(tmp_path) -> None:
     config_path = tmp_path / ".zembra.env"
     database_path = tmp_path / "zembra.sqlite3"
     config_path.write_text(
-        f'[cli]\nmode = "direct"\n\n[database]\npath = "{database_path}"\n\n'
+        f'[database]\npath = "{database_path}"\n\n'
         '[workspace]\nid = "550e8400-e29b-41d4-a716-446655440000"\n',
         encoding="utf-8",
     )
@@ -57,7 +56,6 @@ def test_load_cascading_config_reads_database_path(tmp_path) -> None:
     config = load_cascading_config(config_path, tmp_path / "missing.env")
 
     assert config == ZembraConfig(
-        cli_mode="direct",
         database_path=database_path,
         workspace_id="550e8400-e29b-41d4-a716-446655440000",
     )
@@ -74,7 +72,7 @@ def test_load_cascading_config_reads_http_mode(tmp_path) -> None:
     """
     config_path = tmp_path / ".zembra.env"
     config_path.write_text(
-        '[cli]\nmode = "http"\nhttp_base_url = "http://127.0.0.1:3000"\n\n'
+        '[cli]\nhttp_base_url = "http://127.0.0.1:3000"\n\n'
         '[workspace]\nid = "550e8400-e29b-41d4-a716-446655440000"\n',
         encoding="utf-8",
     )
@@ -82,7 +80,6 @@ def test_load_cascading_config_reads_http_mode(tmp_path) -> None:
     config = load_cascading_config(config_path, tmp_path / "missing.env")
 
     assert config == ZembraConfig(
-        cli_mode="http",
         http_base_url="http://127.0.0.1:3000",
         workspace_id="550e8400-e29b-41d4-a716-446655440000",
     )
@@ -278,8 +275,8 @@ def test_load_cascading_config_reports_invalid_toml(tmp_path) -> None:
         load_cascading_config(config_path, tmp_path / "missing.env")
 
 
-def test_load_cascading_config_reports_missing_cli_mode(tmp_path) -> None:
-    """Verify configs without cli.mode are rejected.
+def test_load_cascading_config_accepts_missing_cli_mode(tmp_path) -> None:
+    """Verify configs without cli.mode are accepted.
 
     Args:
         tmp_path: Pytest temporary directory fixture.
@@ -288,10 +285,16 @@ def test_load_cascading_config_reports_missing_cli_mode(tmp_path) -> None:
         None.
     """
     config_path = tmp_path / ".zembra.env"
-    config_path.write_text('[database]\npath = "zembra.sqlite3"\n', encoding="utf-8")
+    config_path.write_text(
+        '[database]\npath = "zembra.sqlite3"\n\n[workspace]\nid = "workspace-1"\n',
+        encoding="utf-8",
+    )
 
-    with pytest.raises(ConfigCliModeMissingError, match="CLI mode is missing"):
-        load_cascading_config(config_path, tmp_path / "missing.env")
+    config = load_cascading_config(config_path, tmp_path / "missing.env")
+
+    assert config.cli_mode is None
+    assert config.database_path == Path("zembra.sqlite3")
+    assert config.workspace_id == "workspace-1"
 
 
 def test_load_cascading_config_reports_invalid_cli_mode(tmp_path) -> None:
