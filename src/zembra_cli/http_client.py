@@ -13,6 +13,7 @@ from zembra_cli.models import (
     NoteWithMetadata,
     TaggedNotesGroup,
     TagRecord,
+    WorkspaceSummary,
 )
 
 DEFAULT_HTTP_TIMEOUT_SECONDS = 10.0
@@ -163,6 +164,19 @@ class HttpZembraRepository:
         data = self._request_json("GET", "/fields", params={"all": "true"})
         fields_data = self._require_key(data, "fields")
         return self._parse_model_list(fields_data, FieldRecord, "fields")
+
+    def list_workspaces(self) -> list[WorkspaceSummary]:
+        """List all backend workspaces through ``GET /workspaces``.
+
+        Args:
+            None.
+
+        Returns:
+            Ordered workspace summaries returned by the backend.
+        """
+        data = self._request_json("GET", "/workspaces")
+        workspaces_data = self._require_key(data, "workspaces")
+        return self._parse_model_list(workspaces_data, WorkspaceSummary, "workspaces")
 
     def list_notes(self, include_deleted: bool = False) -> list[NoteRecord]:
         """List notes through ``GET /notes``.
@@ -410,7 +424,7 @@ class HttpZembraRepository:
     def _parse_model(
         self,
         data: Any,
-        model_type: type[FieldRecord | NoteRecord | TagRecord],
+        model_type: type[FieldRecord | NoteRecord | TagRecord | WorkspaceSummary],
         name: str,
     ):
         """Parse one Pydantic model from response data.
@@ -434,7 +448,7 @@ class HttpZembraRepository:
     def _model_data_with_workspace_id(
         self,
         data: Any,
-        model_type: type[FieldRecord | NoteRecord | TagRecord],
+        model_type: type[FieldRecord | NoteRecord | TagRecord | WorkspaceSummary],
     ) -> Any:
         """Add repository workspace context to backend record data when omitted.
 
@@ -454,7 +468,7 @@ class HttpZembraRepository:
     def _parse_model_list(
         self,
         data: Any,
-        model_type: type[FieldRecord | NoteRecord | TagRecord],
+        model_type: type[FieldRecord | NoteRecord | TagRecord | WorkspaceSummary],
         name: str,
     ):
         """Parse a list of Pydantic models from response data.

@@ -101,6 +101,91 @@ def tag_payload(name: str = "cli", tag_id: str = "tag-1") -> dict:
     }
 
 
+def workspace_payload(
+    workspace_id: str = "550e8400-e29b-41d4-a716-446655440000",
+    workspace_name: str | None = "Work",
+    short_hash: str = "550e8400",
+) -> dict:
+    """Create a valid workspace list response object.
+
+    Args:
+        workspace_id: Workspace identifier to include.
+        workspace_name: Optional workspace display name to include.
+        short_hash: Workspace short hash to include.
+
+    Returns:
+        JSON-serializable workspace response.
+    """
+    return {
+        "workspace_id": workspace_id,
+        "workspace_name": workspace_name,
+        "short_hash": short_hash,
+        "visible_note_count": 3,
+        "latest_note_created_at": 123,
+    }
+
+
+def test_http_repository_lists_workspaces_without_workspace_param() -> None:
+    """Verify workspace listing calls the unscoped backend endpoint.
+
+    Args:
+        None.
+
+    Returns:
+        None.
+    """
+
+    def handler(request: httpx.Request) -> httpx.Response:
+        """Return a workspace list response.
+
+        Args:
+            request: Captured HTTP request.
+
+        Returns:
+            Mock HTTP response.
+        """
+        assert request.url.path == "/workspaces"
+        assert request.url.query == b""
+        return httpx.Response(200, json={"workspaces": [workspace_payload()]})
+
+    repository = make_repository(handler)
+
+    workspaces = repository.list_workspaces()
+
+    assert workspaces[0].workspace_id == "550e8400-e29b-41d4-a716-446655440000"
+    assert workspaces[0].workspace_name == "Work"
+    assert workspaces[0].short_hash == "550e8400"
+    assert workspaces[0].visible_note_count == 3
+    assert workspaces[0].latest_note_created_at == 123
+
+
+def test_http_repository_rejects_invalid_workspace_response_shape() -> None:
+    """Verify invalid workspace list responses are reported clearly.
+
+    Args:
+        None.
+
+    Returns:
+        None.
+    """
+
+    def handler(_request: httpx.Request) -> httpx.Response:
+        """Return an invalid workspace list response.
+
+        Args:
+            _request: Captured HTTP request.
+
+        Returns:
+            Mock HTTP response.
+        """
+        return httpx.Response(200, json={"workspaces": [{"workspace_id": ""}]})
+
+    repository = make_repository(handler)
+
+    with pytest.raises(ZembraHttpClientError, match="workspaces"):
+        repository.list_workspaces()
+
+
 def test_http_repository_create_note_sends_payload_and_parses_note() -> None:
     """Verify create_note posts JSON and returns a note model.
 

@@ -250,6 +250,43 @@ def load_cascading_config(
     return _config_from_data(merged_data)
 
 
+def load_workspace_command_config(
+    cli_config_path: str | Path | None = None,
+    global_config_path: str | Path | None = None,
+) -> ZembraConfig:
+    """Load the backend config needed by workspace management commands.
+
+    Args:
+        cli_config_path: Optional CLI-specific TOML configuration path.
+        global_config_path: Optional global fallback TOML configuration path.
+
+    Returns:
+        Configuration with a required HTTP backend URL and optional default workspace.
+    """
+    cli_path = (
+        Path(cli_config_path).expanduser()
+        if cli_config_path is not None
+        else default_cli_config_path()
+    )
+    global_path = (
+        Path(global_config_path).expanduser()
+        if global_config_path is not None
+        else default_global_config_path()
+    )
+
+    cli_data = _read_optional_config_data(cli_path)
+    global_data = _read_optional_config_data(global_path)
+    if cli_data is None and global_data is None:
+        raise CascadingConfigMissingError(cli_path, global_path)
+
+    merged_data = _merge_config_data(global_data or {}, cli_data or {})
+    if isinstance(cli_data, dict):
+        workspace_section = cli_data.get("workspace")
+        if isinstance(workspace_section, dict):
+            merged_data["workspace"] = dict(workspace_section)
+    return _workspace_command_config_from_data(merged_data)
+
+
 def write_database_path(
     database_path: str | Path,
     config_path: str | Path | None = None,
@@ -314,6 +351,47 @@ def write_database_path(
         workspace_id=workspace_id,
         workspace_name=workspace_name,
     )
+
+
+def write_default_workspace(
+    workspace_id: str,
+    workspace_name: str | None,
+    config_path: str | Path | None = None,
+) -> ZembraConfig:
+    """Write the default workspace to the CLI config file.
+
+    Args:
+        workspace_id: Workspace identifier to store as the CLI default.
+        workspace_name: Optional workspace display name to store with the identifier.
+        config_path: Optional TOML configuration path.
+
+    Returns:
+        A config object containing the written workspace fields.
+    """
+    path = _resolve_config_path(config_path)
+    path.parent.mkdir(parents=True, exist_ok=True)
+
+    data: dict[str, Any]
+    if path.exists():
+        try:
+            data = tomllib.loads(path.read_text(encoding="utf-8"))
+        except tomllib.TOMLDecodeError as error:
+            raise ConfigParseError(f"Config file is not valid TOML: {error}") from error
+    else:
+        data = {}
+
+    workspace_section = data.get("workspace")
+    if not isinstance(workspace_section, dict):
+        workspace_section = {}
+        data["workspace"] = workspace_section
+    workspace_section["id"] = workspace_id
+    if workspace_name is None:
+        workspace_section.pop("name", None)
+    else:
+        workspace_section["name"] = workspace_name
+
+    path.write_text(_dump_toml(data), encoding="utf-8")
+    return ZembraConfig(workspace_id=workspace_id, workspace_name=workspace_name)
 
 
 def _resolve_config_path(config_path: str | Path | None) -> Path:
@@ -448,6 +526,37 @@ def _config_from_data(data: dict[str, Any]) -> ZembraConfig:
     )
 
 
+def _workspace_command_config_from_data(data: dict[str, Any]) -> ZembraConfig:
+    """Build workspace-command configuration from decoded TOML data.
+
+    Args:
+        data: Decoded TOML object.
+
+    Returns:
+        Config with a required HTTP backend URL and optional workspace fields.
+    """
+    cli_section = data.get("cli")
+    if not isinstance(cli_section, dict):
+        cli_section = {}
+
+    raw_cli_mode = cli_section.get("mode")
+    if raw_cli_mode is not None and raw_cli_mode not in {"direct", "http"}:
+        raise ConfigCliModeInvalidError(raw_cli_mode)
+
+    raw_http_base_url = cli_section.get("http_base_url")
+    http_base_url = raw_http_base_url.strip() if isinstance(raw_http_base_url, str) else None
+    if not http_base_url:
+        raise ConfigHttpBaseUrlMissingError()
+
+    workspace_id, workspace_name = _optional_workspace_config_from_data(data)
+    return ZembraConfig(
+        cli_mode=raw_cli_mode,
+        http_base_url=http_base_url,
+        workspace_id=workspace_id,
+        workspace_name=workspace_name,
+    )
+
+
 def _workspace_config_from_data(data: dict[str, Any]) -> tuple[str, str | None]:
     """Read workspace configuration from decoded TOML data.
 
@@ -469,6 +578,29 @@ def _workspace_config_from_data(data: dict[str, Any]) -> tuple[str, str | None]:
     workspace_name = raw_workspace_name.strip() if isinstance(raw_workspace_name, str) else None
 
     return raw_workspace_id.strip(), workspace_name
+
+
+def _optional_workspace_config_from_data(data: dict[str, Any]) -> tuple[str | None, str | None]:
+    """Read optional workspace configuration from decoded TOML data.
+
+    Args:
+        data: Decoded TOML object.
+
+    Returns:
+        Optional workspace identifier and optional display name.
+    """
+    workspace_section = data.get("workspace")
+    if not isinstance(workspace_section, dict):
+        return None, None
+
+    raw_workspace_id = workspace_section.get("id")
+    workspace_id = raw_workspace_id.strip() if isinstance(raw_workspace_id, str) else None
+    if not workspace_id:
+        workspace_id = None
+
+    raw_workspace_name = workspace_section.get("name")
+    workspace_name = raw_workspace_name.strip() if isinstance(raw_workspace_name, str) else None
+    return workspace_id, workspace_name
 
 
 def _dump_toml(data: dict[str, Any]) -> str:

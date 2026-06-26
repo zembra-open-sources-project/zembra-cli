@@ -16,7 +16,9 @@ from zembra_cli.config import (
     default_cli_config_path,
     default_global_config_path,
     load_cascading_config,
+    load_workspace_command_config,
     write_database_path,
+    write_default_workspace,
 )
 
 
@@ -461,3 +463,102 @@ def test_write_database_path_reports_missing_parent(tmp_path) -> None:
 
     with pytest.raises(ConfigParentMissingError, match="does not exist"):
         write_database_path(tmp_path / "zembra.sqlite3", config_path)
+
+
+def test_load_workspace_command_config_allows_missing_workspace_id(tmp_path) -> None:
+    """Verify workspace commands can load the backend URL before a default workspace exists.
+
+    Args:
+        tmp_path: Pytest temporary directory fixture.
+
+    Returns:
+        None.
+    """
+    cli_config_path = tmp_path / ".zembra" / "config.cli.toml"
+    global_config_path = tmp_path / ".zembra.env"
+    cli_config_path.parent.mkdir()
+    cli_config_path.write_text(
+        '[cli]\nhttp_base_url = "http://backend.test"\n',
+        encoding="utf-8",
+    )
+
+    config = load_workspace_command_config(cli_config_path, global_config_path)
+
+    assert config.http_base_url == "http://backend.test"
+    assert config.workspace_id is None
+    assert config.workspace_name is None
+
+
+def test_load_workspace_command_config_requires_http_base_url(tmp_path) -> None:
+    """Verify workspace commands do not assume a default backend URL.
+
+    Args:
+        tmp_path: Pytest temporary directory fixture.
+
+    Returns:
+        None.
+    """
+    cli_config_path = tmp_path / ".zembra" / "config.cli.toml"
+    global_config_path = tmp_path / ".zembra.env"
+    cli_config_path.parent.mkdir()
+    cli_config_path.write_text(
+        f'[database]\npath = "{tmp_path / "zembra.sqlite3"}"\n',
+        encoding="utf-8",
+    )
+
+    with pytest.raises(ConfigHttpBaseUrlMissingError, match="HTTP backend URL is missing"):
+        load_workspace_command_config(cli_config_path, global_config_path)
+
+
+def test_write_default_workspace_updates_workspace_and_preserves_config(tmp_path) -> None:
+    """Verify default workspace writing preserves unrelated config fields.
+
+    Args:
+        tmp_path: Pytest temporary directory fixture.
+
+    Returns:
+        None.
+    """
+    config_path = tmp_path / ".zembra" / "config.cli.toml"
+    config_path.parent.mkdir()
+    config_path.write_text(
+        '[cli]\nhttp_base_url = "http://backend.test"\n\n'
+        '[database]\npath = "zembra.sqlite3"\n\n'
+        '[workspace]\nid = "old-workspace"\nname = "Old"\n',
+        encoding="utf-8",
+    )
+
+    config = write_default_workspace("new-workspace", "New", config_path)
+
+    assert config.workspace_id == "new-workspace"
+    assert config.workspace_name == "New"
+    config_text = config_path.read_text(encoding="utf-8")
+    assert 'http_base_url = "http://backend.test"' in config_text
+    assert 'path = "zembra.sqlite3"' in config_text
+    assert 'id = "new-workspace"' in config_text
+    assert 'name = "New"' in config_text
+
+
+def test_write_default_workspace_removes_name_when_backend_name_is_null(tmp_path) -> None:
+    """Verify null backend workspace names remove stale CLI display names.
+
+    Args:
+        tmp_path: Pytest temporary directory fixture.
+
+    Returns:
+        None.
+    """
+    config_path = tmp_path / ".zembra" / "config.cli.toml"
+    config_path.parent.mkdir()
+    config_path.write_text(
+        '[workspace]\nid = "old-workspace"\nname = "Old"\n',
+        encoding="utf-8",
+    )
+
+    config = write_default_workspace("new-workspace", None, config_path)
+
+    assert config.workspace_id == "new-workspace"
+    assert config.workspace_name is None
+    config_text = config_path.read_text(encoding="utf-8")
+    assert 'id = "new-workspace"' in config_text
+    assert "name =" not in config_text

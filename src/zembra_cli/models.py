@@ -40,6 +40,24 @@ class WorkspaceRecord(SchemaModel):
     deleted_at: NonNegativeInt | None = None
 
 
+class WorkspaceSummary(SchemaModel):
+    """Represent one workspace item returned by the HTTP workspace list endpoint.
+
+    Attributes:
+        workspace_id: Stable workspace identifier returned by the backend.
+        workspace_name: Optional human-readable workspace name.
+        short_hash: Backend-provided short hash for compact selection.
+        visible_note_count: Number of visible notes in the workspace.
+        latest_note_created_at: Optional timestamp for the latest visible note.
+    """
+
+    workspace_id: NonEmptyStr
+    workspace_name: NonEmptyStr | None = None
+    short_hash: NonEmptyStr
+    visible_note_count: NonNegativeInt
+    latest_note_created_at: NonNegativeInt | None = None
+
+
 class FieldRecord(SchemaModel):
     """Represent one row from the fields table.
 
