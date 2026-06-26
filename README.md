@@ -79,6 +79,16 @@ zembra-cli random fields
 
 Add `--json` to random commands when structured output is needed.
 
+List backend workspaces and set the CLI default workspace:
+
+```bash
+zembra-cli workspaces list
+zembra-cli workspaces list --json
+zembra-cli workspaces set-default 550e8400
+```
+
+Workspace commands read the backend URL only from `cli.http_base_url` in the merged config. `set-default` accepts a full workspace ID, a short hash prefix, or an exact workspace name, then writes the selected workspace to `~/.zembra/config.cli.toml`.
+
 ## HTTP Mode
 
 `zembra-cli` can also connect to a Zembra HTTP backend. Add a backend URL to `~/.zembra/config.cli.toml` when HTTP should be tried first:

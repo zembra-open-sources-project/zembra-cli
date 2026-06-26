@@ -326,7 +326,10 @@ def build_workspaces_table(
     return table
 
 
-def matching_workspaces(workspaces: list[WorkspaceSummary], workspace_ref: str) -> list[WorkspaceSummary]:
+def matching_workspaces(
+    workspaces: list[WorkspaceSummary],
+    workspace_ref: str,
+) -> list[WorkspaceSummary]:
     """Find workspaces matching a user-provided reference.
 
     Args:
@@ -357,8 +360,9 @@ def format_workspace_candidates(workspaces: list[WorkspaceSummary]) -> str:
     """
     lines = []
     for item in workspaces:
+        workspace_name = format_workspace_name(item.workspace_name)
         lines.append(
-            f"- {item.short_hash}  {format_workspace_name(item.workspace_name)}  {item.workspace_id}"
+            f"- {item.short_hash}  {workspace_name}  {item.workspace_id}"
         )
     return "\n".join(lines)
 
@@ -930,7 +934,8 @@ def load_workspace_client() -> tuple[HttpZembraRepository, str | None]:
         fail_command("HTTP backend URL is missing in the zembra config.")
 
     workspace_id = config.workspace_id or "workspace-command"
-    return HttpZembraRepository(config.http_base_url, workspace_id=workspace_id), config.workspace_id
+    repository = HttpZembraRepository(config.http_base_url, workspace_id=workspace_id)
+    return repository, config.workspace_id
 
 
 @workspaces_app.command("list")

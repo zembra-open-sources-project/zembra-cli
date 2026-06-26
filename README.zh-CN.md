@@ -38,7 +38,7 @@ zembra-cli init
 zembra-cli init --database /path/to/zembra.sqlite3
 ```
 
-默认配置文件路径是 `~/.zembra.env`。
+默认 CLI 配置文件路径是 `~/.zembra/config.cli.toml`。已有的 `~/.zembra.env` 仍会作为低优先级回退来源读取缺失字段。
 
 ## 基础用法
 
@@ -77,17 +77,26 @@ zembra-cli random fields
 
 需要结构化输出时，可以为 random 命令添加 `--json`。
 
+列出后端 workspace 并设置 CLI 默认 workspace：
+
+```bash
+zembra-cli workspaces list
+zembra-cli workspaces list --json
+zembra-cli workspaces set-default 550e8400
+```
+
+workspace 命令只从合并配置中的 `cli.http_base_url` 读取后端地址，不使用默认 URL。`set-default` 接受完整 workspace ID、短 hash 前缀或精确 workspace 名称，然后把选中的 workspace 写入 `~/.zembra/config.cli.toml`。
+
 ## HTTP 模式
 
-`zembra-cli` 也可以连接到 Zembra HTTP backend。把 `~/.zembra.env` 配置为 HTTP 模式：
+`zembra-cli` 也可以连接到 Zembra HTTP backend。需要优先尝试 HTTP 时，把 backend URL 写入 `~/.zembra/config.cli.toml`：
 
 ```toml
 [cli]
-mode = "http"
 http_base_url = "http://127.0.0.1:3000"
 ```
 
-direct 模式和 HTTP 模式使用同一套面向用户的命令。
+HTTP 和本地存储使用同一套面向用户的命令。配置 `http_base_url` 后，命令会优先尝试 HTTP；HTTP 请求失败时，如果配置了 SQLite 数据库路径，会回退到本地数据库。
 
 ## MCP Server
 
